@@ -14,6 +14,15 @@ function JSFloorDiv(a: int, b: int): int
     else -((a - 1) / (-b)) - 1
 }
 
+function {:axiom} floorShareG(total: int, weight: int, W: int, G: int): int
+  requires (W >= 1)
+  requires (G >= 1)
+  requires (total >= 0)
+  requires (weight >= 0)
+  ensures (floorShareG(total, weight, W, G) >= 0)
+  ensures ((floorShareG(total, weight, W, G) * W) <= (total * weight))
+  ensures ((total * weight) <= ((floorShareG(total, weight, W, G) * W) + ((W * G) - 1)))
+
 function sumTo(arr: seq<int>, n: int): int
   requires (0 <= n)
   requires (n <= |arr|)
@@ -25,24 +34,15 @@ function sumTo(arr: seq<int>, n: int): int
     (sumTo(arr, (n - 1)) + arr[(n - 1)])
 }
 
-function floorShareOf(total: int, weights: seq<int>, k: int): int
-  requires (0 <= k)
-  requires (k < |weights|)
-  requires (sumTo(weights, |weights|) >= 1)
-{
-  JSFloorDiv((total * weights[k]), sumTo(weights, |weights|))
-}
-
 // ════════════════════════════════════════════════════════════════
-// Hand-written proof support. Each lemma is a small, named fact; the
-// method below just cites them, so its own verification stays linear
-// and fast (the nonlinear/div reasoning is quarantined in here).
+// Hand-written proof support. Each lemma is a small named fact; the
+// method just cites them, so its own VC stays linear. The division
+// reasoning lives entirely in floorShare.ts (lifted onto the opaque
+// `floorShareG` axiom above) — nothing here unfolds a div.
 // ════════════════════════════════════════════════════════════════
 
-// ── sumTo lemmas (the seq-induction the two loops rely on) ─────────
+// ── sumTo lemmas (the seq-induction the loops rely on) ────────────
 
-// A prefix sum depends only on that prefix: sequences agreeing on
-// [0, n) have equal sumTo at n.
 lemma SumToSamePrefix(a: seq<int>, b: seq<int>, n: int)
   requires 0 <= n <= |a|
   requires n <= |b|
@@ -63,64 +63,40 @@ lemma SumToExtend(arr: seq<int>, x: int, n: int)
   SumToSamePrefix(arr, arr + [x], n);
 }
 
-// Bumping one in-range entry by +1 raises the whole sum by exactly 1.
-lemma SumToUpdate(arr: seq<int>, j: int, n: int)
+// Adding `d` to one in-range entry raises the whole sum by exactly `d`.
+lemma SumToUpdate(arr: seq<int>, j: int, n: int, d: int)
   requires 0 <= j < n <= |arr|
-  ensures sumTo(arr[j := arr[j] + 1], n) == sumTo(arr, n) + 1
+  ensures sumTo(arr[j := arr[j] + d], n) == sumTo(arr, n) + d
   decreases n
 {
   if j == n - 1 {
-    SumToSamePrefix(arr, arr[j := arr[j] + 1], n - 1);
+    SumToSamePrefix(arr, arr[j := arr[j] + d], n - 1);
   } else {
-    SumToUpdate(arr, j, n - 1);
+    SumToUpdate(arr, j, n - 1, d);
   }
 }
 
-// ── floor-share bounds (the div reasoning, isolated) ──────────────
+// ── the deficit bound (div-free: stated over the lifted bracket) ──
 
-// The floored fair share brackets the exact share: floorShare·W never
-// exceeds total·weight, and falls short of it by less than W.
-lemma FloorShareBounds(total: int, weights: seq<int>, k: int)
-  requires 0 <= k < |weights|
-  requires sumTo(weights, |weights|) >= 1
-  requires total >= 0
-  requires weights[k] >= 0
-  ensures floorShareOf(total, weights, k) >= 0
-  ensures floorShareOf(total, weights, k) * sumTo(weights, |weights|) <= total * weights[k]
-  ensures total * weights[k] <= floorShareOf(total, weights, k) * sumTo(weights, |weights|) + (sumTo(weights, |weights|) - 1)
-{
-  var W := sumTo(weights, |weights|);
-  LemmaMulNonnegative(total, weights[k]); // total * weights[k] >= 0
-  var a := total * weights[k];
-  assert floorShareOf(total, weights, k) == a / W; // JSFloorDiv(a, W) == a / W (a >= 0, W > 0)
-  LemmaFundamentalDivMod(a, W); // a == W * (a / W) + a % W
-  LemmaModBasicsAuto();
-  assert 0 <= a % W < W;
-}
-
-// The floors fall short of `total` by fewer than m parties' worth of
-// cents: total·Σweights(m) ≤ (Σ floors over [0,m))·W + m·(W−1). At m = n
-// this gives total − placed ≤ n − 1, i.e. fewer than n leftover cents.
-lemma DeficitBound(result: seq<int>, total: int, weights: seq<int>, m: int)
+// Σ over [0,m) of values each within (W·G−1) below their exact share
+// falls short of total·Σweights(m) by under m·(W·G). At m = n this gives
+// total − placed < n·G — fewer than n·G cents left to redistribute.
+lemma DeficitBoundG(result: seq<int>, total: int, weights: seq<int>, W: int, G: int, m: int)
   requires 0 <= m <= |result|
   requires m <= |weights|
-  requires sumTo(weights, |weights|) >= 1
+  requires W >= 1 && G >= 1
   requires total >= 0
   requires forall k :: 0 <= k < |weights| ==> weights[k] >= 0
-  requires forall k :: 0 <= k < m ==> result[k] == floorShareOf(total, weights, k)
-  ensures total * sumTo(weights, m) <= sumTo(result, m) * sumTo(weights, |weights|) + m * (sumTo(weights, |weights|) - 1)
+  requires forall k :: 0 <= k < m ==> result[k] == floorShareG(total, weights[k], W, G)
+  ensures total * sumTo(weights, m) <= sumTo(result, m) * W + m * (W * G - 1)
   decreases m
 {
   if m != 0 {
-    var W := sumTo(weights, |weights|);
-    DeficitBound(result, total, weights, m - 1);
-    FloorShareBounds(total, weights, m - 1);
-    assert result[m - 1] == floorShareOf(total, weights, m - 1);
-    // sumTo(result, m) = sumTo(result, m-1) + floorShareOf(m-1)
-    // sumTo(weights, m) = sumTo(weights, m-1) + weights[m-1]
+    DeficitBoundG(result, total, weights, W, G, m - 1);
+    assert total * weights[m - 1] <= result[m - 1] * W + (W * G - 1); // floorShareG's lifted bound
     assert total * sumTo(weights, m) == total * sumTo(weights, m - 1) + total * weights[m - 1];
-    assert sumTo(result, m) * W == sumTo(result, m - 1) * W + floorShareOf(total, weights, m - 1) * W;
-    assert m * (W - 1) == (m - 1) * (W - 1) + (W - 1);
+    assert sumTo(result, m) * W == sumTo(result, m - 1) * W + result[m - 1] * W;
+    assert m * (W * G - 1) == (m - 1) * (W * G - 1) + (W * G - 1);
   }
 }
 
@@ -133,34 +109,55 @@ lemma MulCancelLe(x: int, y: int, w: int)
   ensures x <= y
 {
   if x > y {
-    LemmaMulStrictInequality(y, x, w); // y < x, w > 0 ⟹ y·w < x·w, contradiction
+    LemmaMulStrictInequality(y, x, w);
   }
 }
 
-// total·w ≤ placed·w + n·(w−1) with n, w ≥ 1  ⟹  total ≤ placed + (n−1).
-// (Why leftover < n: the floors lose fewer than n cents.)
-lemma DeficitCancel(total: int, placed: int, n: int, w: int)
-  requires n >= 1 && w >= 1
-  requires total * w <= placed * w + n * (w - 1)
-  ensures total <= placed + (n - 1)
+// total·W ≤ placed·W + n·(W·G − 1) with n,W,G ≥ 1  ⟹  total ≤ placed + n·G − 1.
+lemma DeficitCancelG(total: int, placed: int, n: int, G: int, W: int)
+  requires n >= 1 && W >= 1 && G >= 1
+  requires total * W <= placed * W + n * (W * G - 1)
+  ensures total <= placed + n * G - 1
 {
-  if total > placed + (n - 1) {
-    assert total - placed >= n;
-    LemmaMulInequality(n, total - placed, w); // n ≤ total−placed ⟹ n·w ≤ (total−placed)·w
-    assert (total - placed) * w == total * w - placed * w;
-    assert n * (w - 1) == n * w - n;
+  LemmaMulIsAssociativeAuto();
+  LemmaMulIsCommutativeAuto();
+  if total > placed + n * G - 1 {
+    assert total - placed >= n * G;
+    LemmaMulInequality(n * G, total - placed, W); // (n*G)*W <= (total-placed)*W
+    assert (total - placed) * W == total * W - placed * W;
+    assert n * (W * G - 1) == n * W * G - n;
+    assert (n * G) * W == n * W * G;
   }
 }
 
-method allocate(total: int, weights: seq<int>) returns (res: seq<int>)
+// D split into L = ⌊D/G⌋ whole-G chunks and a sub-G remainder, with the
+// chunk count strictly below n (since D < n·G).
+lemma DeficitSplitBounds(D: int, G: int, n: int)
+  requires G >= 1 && n >= 1
+  requires 0 <= D <= n * G - 1
+  ensures 0 <= JSFloorDiv(D, G) < n
+  ensures 0 <= D - JSFloorDiv(D, G) * G < G
+{
+  LemmaMulIsCommutativeAuto();
+  assert JSFloorDiv(D, G) == D / G; // D >= 0, G > 0
+  LemmaFundamentalDivMod(D, G); // D == G*(D/G) + D%G
+  LemmaModBasicsAuto();
+  assert 0 <= D % G < G;
+  if D / G >= n {
+    LemmaMulInequality(n, D / G, G); // n*G <= (D/G)*G
+  }
+}
+
+method allocate(total: int, weights: seq<int>, G: int) returns (res: seq<int>)
   requires (total >= 0)
   requires (|weights| >= 1)
   requires forall k: int :: ((0 <= k) ==> (k < |weights|) ==> (weights[k] >= 0))
   requires (sumTo(weights, |weights|) >= 1)
+  requires (G >= 1)
   ensures (|res| == |weights|)
   ensures (sumTo(res, |res|) == total)
-  ensures forall k: int :: ((0 <= k) ==> (k < |res|) ==> (floorShareOf(total, weights, k) <= res[k]))
-  ensures forall k: int :: ((0 <= k) ==> (k < |res|) ==> (res[k] <= (floorShareOf(total, weights, k) + 1)))
+  ensures forall k: int :: ((0 <= k) ==> (k < |res|) ==> (floorShareG(total, weights[k], sumTo(weights, |weights|), G) <= res[k]))
+  ensures forall k: int :: ((0 <= k) ==> (k < |res|) ==> (res[k] <= (floorShareG(total, weights[k], sumTo(weights, |weights|), G) + G)))
 {
   var n := |weights|;
   var i_t0 := sumTo(weights, n);
@@ -173,39 +170,42 @@ method allocate(total: int, weights: seq<int>) returns (res: seq<int>)
     invariant (i <= n)
     invariant (|result| == i)
     invariant (placed == sumTo(result, i))
-    invariant forall k: int :: ((0 <= k) ==> (k < i) ==> (result[k] == floorShareOf(total, weights, k)))
     invariant ((placed * W) <= (total * sumTo(weights, i)))
+    invariant forall k: int :: ((0 <= k) ==> (k < i) ==> (result[k] == floorShareG(total, weights[k], W, G)))
     decreases (n - i)
   {
-    var i_t1 := floorShareOf(total, weights, i);
-    var share := i_t1;
-    FloorShareBounds(total, weights, i);
+    var share := floorShareG(total, weights[i], W, G);
     SumToExtend(result, share, i);
     result := (result + [share]);
     placed := (placed + share);
     i := (i + 1);
   }
-  DeficitBound(result, total, weights, n);
+  DeficitBoundG(result, total, weights, W, G, n);
   MulCancelLe(placed, total, W);
   assert (placed <= total);
-  assert total * W <= placed * W + n * (W - 1);
-  DeficitCancel(total, placed, n, W);
-  assert (total <= (placed + (n - 1)));
-  var leftover := (total - placed);
+  assert total * W <= placed * W + n * (W * G - 1);
+  DeficitCancelG(total, placed, n, G, W);
+  assert (total <= (placed + ((n * G) - 1)));
+  var D := (total - placed);
+  var L := JSFloorDiv(D, G);
+  var rem := (D - (L * G));
+  DeficitSplitBounds(D, G, n);
   var j := 0;
-  while (j < leftover)
+  while (j < L)
     invariant (0 <= j)
-    invariant (j <= leftover)
-    invariant (leftover <= n)
+    invariant (j <= L)
+    invariant (L < n)
     invariant (|result| == n)
-    invariant (sumTo(result, n) == (placed + j))
-    invariant forall k: int :: ((0 <= k) ==> (k < j) ==> (result[k] == (floorShareOf(total, weights, k) + 1)))
-    invariant forall k: int :: ((j <= k) ==> (k < n) ==> (result[k] == floorShareOf(total, weights, k)))
-    decreases (leftover - j)
+    invariant (sumTo(result, n) == (placed + (j * G)))
+    invariant forall k: int :: ((0 <= k) ==> (k < j) ==> (result[k] == (floorShareG(total, weights[k], W, G) + G)))
+    invariant forall k: int :: ((j <= k) ==> (k < n) ==> (result[k] == floorShareG(total, weights[k], W, G)))
+    decreases (L - j)
   {
-    SumToUpdate(result, j, n);
-    result := result[j := (result[j] + 1)];
+    SumToUpdate(result, j, n, G);
+    result := result[j := (result[j] + G)];
     j := (j + 1);
   }
+  SumToUpdate(result, n - 1, n, rem);
+  result := result[(n - 1) := (result[(n - 1)] + rem)];
   return result;
 }
