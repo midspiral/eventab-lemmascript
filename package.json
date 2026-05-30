@@ -1,0 +1,15 @@
+{
+  "name": "eventab-lemmascript",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "regen": "npx tsx ../LemmaScript/tools/src/lsc.ts regen --backend=dafny",
+    "verify": "../LemmaScript/tools/check.sh dafny"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^6.0.3"
+  }
+}
