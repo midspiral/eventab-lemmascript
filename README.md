@@ -10,23 +10,29 @@ Its one job: confirm the money kernel's proof comes out *clean and followable*
 
 `src/allocate.ts` — `allocate(total, weights)` splits an integer `total` (in
 **cents**) across weighted parties by **largest-remainder** (Hamilton
-apportionment). The headline theorem, proven for **every** input:
+apportionment). Two theorems, proven for **every** input:
 
-> **Conservation** — `Σ result === total`. Not a cent created or lost, for any
-> weights and any total.
+> **Conservation** — `Σ result === total`. Not a cent created or lost.
+>
+> **Fairness** — `floorShare(k) ≤ result[k] ≤ floorShare(k) + 1`. Everyone gets
+> their exact fair share rounded down, plus at most one redistributed cent —
+> i.e. within a cent of fair. No one is silently overcharged.
 
-The entire proof burden is **two short `sumTo` lemmas** (append leaves a prefix
-sum unchanged; bumping one entry by +1 raises the sum by exactly 1),
-hand-written in `src/allocate.dfy`. Dafny discharges the rest — the
-non-negativity and the `placed <= total` floor bound — on its own.
+Conservation is the load-bearing one; fairness is its companion. The proof keeps
+the algorithm readable — two short loops that each just **cite small, named
+lemmas**: prefix-sum facts, the floor/remainder bounds, and a pair of
+arithmetic-cancellation lemmas from the Dafny standard library. All the
+nonlinear and division reasoning is *quarantined* inside those lemmas, so the
+method's own verification stays linear and fast.
 
 ```
-dafny verify src/allocate.dfy   →   10 verified, 0 errors
+dafny verify src/allocate.dfy --standard-libraries   →   17 verified, 0 errors  (~5s)
 ```
 
-The algorithm stays readable: two loops, each citing one lemma. That clean,
-followable proof (not an SMT one-liner, not an unreadable induction) is the
-green light the spike was looking for.
+> A proof-engineering note worth keeping: the first attempt crammed the
+> nonlinear bounds and cancellations *inline* and **timed out past 150 s**.
+> Lifting each into its own lemma dropped it to ~5 s with no logic change — the
+> structure, not the math, was the cost. (That lesson is itself workshop-worthy.)
 
 ## The teaching contrast (v0 → v1)
 
@@ -59,12 +65,12 @@ npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocateNaive.
 
 ## What's next
 
-- **Fairness + roundness `G`** (DESIGN §3) — bound each party within one
-  roundness unit of its exact fair share, across `G ∈ {1¢, $1, $5}`. This is a
-  genuine step up from conservation: it needs the `leftover < n` upper bound and
-  per-element tracking through both passes, and its honest statement is
-  cross-multiplied (`|result[k]·W − total·wₖ| ≤ G`), which reads less cleanly
-  than `Σ === total`. How much of that to carry is a real workshop design choice.
+- **Roundness `G`** (DESIGN §3.2) — let amounts round to whole dollars or the
+  nearest $5 across `G ∈ {1¢, $1, $5}` while **conservation stays exact** and
+  fairness stays within `G`. Conservation is never traded for roundness; the
+  sub-`G` remainder lands on one designated party. The clean `≤ G` bound needs a
+  G-granular floor and a residual absorber — a real increment on top of this
+  `G = 1` (cent) kernel.
 - Then **Stages 1–4** — bill model, balances & settlement, ephemeral op-log —
   each composing on `allocate` (DESIGN §7).
 
@@ -72,6 +78,6 @@ npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocateNaive.
 
 ```
 src/allocate.ts        VERIFIED core — allocate (largest-remainder). No floats, no I/O.
-src/allocate.dfy       generated + 2 hand-written sumTo lemmas (the whole proof)
+src/allocate.dfy       generated + hand-written lemmas (sumTo, floor bounds, cancellation)
 src/allocateNaive.ts   v0 counterexample (EXPECTED TO FAIL) — the vanished cent
 ```
