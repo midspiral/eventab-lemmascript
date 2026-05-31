@@ -34,6 +34,12 @@ function sumTo(arr: seq<int>, n: int): int
     (sumTo(arr, (n - 1)) + arr[(n - 1)])
 }
 
+function roundToG(x: int, G: int): int
+  requires (G >= 1)
+{
+  (G * JSFloorDiv((x + JSFloorDiv(G, 2)), G))
+}
+
 // ════════════════════════════════════════════════════════════════
 // Hand-written proof support. Each lemma is a small named fact; the
 // method just cites them, so its own VC stays linear. The division
@@ -449,6 +455,7 @@ method settleRounded(balances: seq<int>, hub: int, G: int) returns (res: seq<int
   requires (hub < |balances|)
   requires (G >= 1)
   ensures (|res| == |balances|)
+  ensures forall p: int :: ((0 <= p) ==> (p < |res|) ==> (p != hub) ==> (res[p] == roundToG(balances[p], G)))
   ensures (sumTo(res, |res|) == 0)
 {
   var n := |balances|;
@@ -462,9 +469,11 @@ method settleRounded(balances: seq<int>, hub: int, G: int) returns (res: seq<int
     invariant (|net| == p)
     invariant (sumTo(net, p) == s)
     invariant ((hub < p) ==> (net[hub] == 0))
+    invariant forall q: int :: ((0 <= q) ==> (q < p) ==> (q != hub) ==> (net[q] == roundToG(balances[q], G)))
     decreases (n - p)
   {
     var v := (if (p == hub) then 0 else (G * JSFloorDiv((balances[p] + half), G)));
+    assert (p != hub) ==> (v == roundToG(balances[p], G));
     SumToExtend(net, v, p);
     net := (net + [v]);
     s := (s + v);

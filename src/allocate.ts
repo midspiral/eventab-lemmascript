@@ -379,23 +379,34 @@ export function settle(balances: number[]): number[] {
   return net;
 }
 
+// Round x to the nearest whole multiple of G (ties up). Pulled out as a named
+// function so the settlement *contract* can name the amount each non-payer owes
+// (see settleRounded's `ensures`), rather than only promising the books balance.
+export function roundToG(x: number, G: number): number {
+  //@ requires G >= 1
+  return G * Math.floor((x + Math.floor(G / 2)) / G);
+}
+
 // settleRounded(balances, hub, G): the SAME star settlement, but each non-hub
 // transfer is ROUNDED to a whole multiple of G and the HUB (the person who
 // fronted the bill) absorbs the leftover — so every other person pays/receives a
 // round number while the books still balance exactly. Shares stay computed to the
 // cent (G is applied here, to the settlement, NOT to the per-item split — so an
 // even split stays even). The load-bearing fact, the one that makes "the payer
-// eats the rounding" safe:
+// eats the rounding" safe — and BOTH halves are now in the contract:
 //
-//   Σ net === 0     (rounding the transfers invents and loses no money)
+//   net[p] === roundToG(balances[p], G)   for every non-hub p   (each pays a round amount)
+//   Σ net === 0                                                   (no money invented or lost)
 //
-// net[p] for p ≠ hub is balances[p] rounded to the nearest G; net[hub] is set to
-// whatever makes the sum zero. At G === 1 there is no rounding and net === balances.
+// Together they force net[hub] === −Σ(rounded non-hub transfers): the hub/payer absorbs the
+// rounding. At G === 1, roundToG is the identity, so net === balances — exactly like `settle`.
+// (Without the first `ensures`, the spec was vacuous: all-zeros also conserves.)
 export function settleRounded(balances: number[], hub: number, G: number): number[] {
   //@ requires balances.length >= 1
   //@ requires 0 <= hub && hub < balances.length
   //@ requires G >= 1
   //@ ensures \result.length === balances.length
+  //@ ensures forall(p, 0 <= p && p < \result.length && p !== hub ==> \result[p] === roundToG(balances[p], G))
   //@ ensures sumTo(\result, \result.length) === 0
   //@ type p nat
 
@@ -410,6 +421,7 @@ export function settleRounded(balances: number[], hub: number, G: number): numbe
     //@ invariant net.length === p
     //@ invariant sumTo(net, p) === s
     //@ invariant hub < p ==> net[hub] === 0
+    //@ invariant forall(q, 0 <= q && q < p && q !== hub ==> net[q] === roundToG(balances[q], G))
     //@ decreases n - p
     const v = p === hub ? 0 : G * Math.floor((balances[p] + half) / G);
     net = [...net, v];

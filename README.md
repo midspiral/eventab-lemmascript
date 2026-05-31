@@ -1,10 +1,11 @@
-# EvenTab — verified allocation kernel (Stage 0 spike)
+# EvenTab — a verified group bill-splitter
 
 > **Split the tab, even — provably to the cent.**
 
-This is the **Stage 0 spike** for EvenTab (full design in [DESIGN.md](DESIGN.md)).
-Its one job: confirm the money kernel's proof comes out *clean and followable*
-— before building the app around it.
+A complete, shipped bill-splitter built on a **Dafny-verified money core**
+(`src/allocate.ts`) wrapped in a single-file React app (`ui/`) — full design in
+[DESIGN.md](DESIGN.md). The rest of this README walks the verified core stage by
+stage; the app (and how it only ever *calls* the proven ops) is at the end.
 
 ## What's verified
 
@@ -37,7 +38,7 @@ just **cite small, named lemmas**. Two techniques keep it fast *and* honest:
 - The arithmetic cancellations go through the Dafny standard library.
 
 ```
-check.sh dafny   →   floorShare: 4 verified · allocate.ts: 35 verified · 0 errors  (~7s)
+check.sh dafny   →   floorShare: 4 verified · allocate.ts: 39 verified · 0 errors
 ```
 (`allocate.ts` now holds the kernel **and** the Stage 1 bill model below.)
 
@@ -93,6 +94,13 @@ Once everyone has a total, who actually pays whom:
 > transfer. Valid and conserving; routing through one hub isn't *minimal* (that's
 > NP-hard, DESIGN §5), so the shell can swap in a fancier matcher later — the
 > *theorem* it must satisfy is the one proved here.
+>
+> **`settleRounded`** — what the app actually calls: the same star settlement, but
+> each non-payer's transfer is **rounded** to the chosen unit and the payer (hub)
+> absorbs the remainder. Proven: `net[p] === roundToG(balances[p], G)` for every
+> non-hub `p` **and** `Σ net === 0` — the rounded transfers are the *named* rounded
+> amounts, and no cent is invented. (Why rounding lives here and not in `allocate`:
+> see the spec-bug note below.)
 
 ## Stage 3 — the ephemeral op-log (what makes the live sync safe)
 
@@ -131,6 +139,31 @@ spine (DESIGN §3.3, §9).
 > `allocateNaive.ts` is intentionally **not** in `LemmaScript-files.txt` — it is
 > meant to fail. It is a teaching artifact, not part of the verified core.
 
+## A subtler spec bug: a green proof of the wrong thing
+
+The naive allocator above is the *easy* kind of bug — the verifier **caught** it.
+Rounding was the hard kind: every proof stayed green while the spec was quietly
+wrong, twice.
+
+**Wrong layer.** v1 rounded each *share* by passing roundness `G` into `allocate`
+(and so `itemShare` / `bill`). Those proofs hold — `Σ` conserves, each share is
+fair to within `G` — but it is the wrong place to round for a bill: an even
+$16 / $16 split becomes **$17 / $15**, and each allocation's sub-`G` remainder
+lands on whoever is last in it (often someone who didn't order). Verified, and
+wrong. The fix keeps shares **exact** and rounds only the *settlement*, with the
+payer absorbing the difference — `settleRounded`.
+
+**Vacuous spec.** `settleRounded`'s first contract was only `Σ net === 0` — which
+`[0, 0, …, 0]` also satisfies (settle nothing, conserve perfectly). Conservation
+was proven; *that the right rounded amounts actually change hands* was not. The fix
+pins it: `net[p] === roundToG(balances[p], G)` for every non-payer, which together
+with `Σ = 0` forces the payer's absorption too.
+
+The lesson the workshop keeps returning to: a green check means "matches the spec
+you **wrote**," never "matches the spec you **wanted**." `settle` and `settleRounded`
+are kept side by side (with the historical note above them in `allocate.ts`) so the
+difference shows up in the *specs*, not just the code.
+
 ## Run it
 
 ```sh
@@ -143,14 +176,11 @@ npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocateNaive.
 
 ## What's next
 
-The verified **money core is complete** — Stages 0–3 cover allocate, the bill,
-settlement, and the op-log. What remains is the app around it:
-
-- **Stage 4** — a verified receipt export (DESIGN §7): a printable summary that
-  re-totals to the bill (projection soundness).
-- **The shell** — wrap the core in a thin React UI (it can only *call* proven
-  operations, never re-implement them) on the Cloudflare Durable Object backend,
-  and run it browser-first end to end.
+The verified **money core is complete** (Stages 0–3: allocate, the bill,
+settlement, the op-log) **and the app is shipped** — a single-file React UI on the
+verified core (see below), browser-tested headless and deployed to GitHub Pages.
+The one optional extension left is **Stage 4**, a verified receipt export
+(DESIGN §7): a printable summary that re-totals to the bill (projection soundness).
 
 ## Layout
 
@@ -158,7 +188,7 @@ settlement, and the op-log. What remains is the app around it:
 src/floorShare.ts      VERIFIED — the G-floor + its bracketing bounds (the only div proof).
 src/allocate.ts        VERIFIED core — kernel (allocate, roundness G) + Stage 1 bill model
                        (itemShare, itemSubtotals, billTotals, bill) + Stage 2
-                       (balances, settle) + Stage 3 op-log (applyOp, replay).
+                       (balances, settle, settleRounded, roundToG) + Stage 3 op-log (applyOp, replay).
                        No floats, no I/O.
 src/*.dfy              generated + hand-written lemmas (sumTo, deficit bound, cancellation)
 src/allocateNaive.ts   v0 counterexample (EXPECTED TO FAIL) — the vanished cent
