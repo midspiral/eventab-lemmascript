@@ -113,6 +113,21 @@ lemma MulCancelLe(x: int, y: int, w: int)
   }
 }
 
+// The single nonlinear step of allocate's pass-1 loop: adding one party keeps the
+// running placed·W bound. Quarantined into a lemma (distributivity via the std lib)
+// so the loop VC carries no raw nonlinear product — this is what makes line ~173
+// (`placed * W <= total * sumTo(weights, i)`) verify deterministically instead of
+// flaking out in CI.
+lemma StepBoundG(placed: int, share: int, W: int, total: int, sw: int, w: int)
+  requires placed * W <= total * sw
+  requires share * W <= total * w
+  ensures (placed + share) * W <= total * (sw + w)
+{
+  LemmaMulIsDistributiveAuto();
+  assert (placed + share) * W == placed * W + share * W;
+  assert total * (sw + w) == total * sw + total * w;
+}
+
 // total·W ≤ placed·W + n·(W·G − 1) with n,W,G ≥ 1  ⟹  total ≤ placed + n·G − 1.
 lemma DeficitCancelG(total: int, placed: int, n: int, G: int, W: int)
   requires n >= 1 && W >= 1 && G >= 1
@@ -176,6 +191,7 @@ method allocate(total: int, weights: seq<int>, G: int) returns (res: seq<int>)
   {
     var share := floorShareG(total, weights[i], W, G);
     SumToExtend(result, share, i);
+    StepBoundG(placed, share, W, total, sumTo(weights, i), weights[i]);
     result := (result + [share]);
     placed := (placed + share);
     i := (i + 1);
