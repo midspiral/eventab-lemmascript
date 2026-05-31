@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "regen": "npx tsx ../LemmaScript/tools/src/lsc.ts regen --backend=dafny",
-    "verify": "../LemmaScript/tools/check.sh dafny"
+    "verify": "../LemmaScript/tools/check.sh dafny",
+    "demo": "tsx src/demo.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
