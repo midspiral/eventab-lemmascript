@@ -190,3 +190,100 @@ export function itemShare(price: number, claimers: number[], claimerWeights: num
   }
   return result;
 }
+
+// Element-wise sum of two equal-length vectors. The sum of the result is the
+// sum of the parts — the linearity that lets per-person subtotals accumulate
+// across items without losing a cent.
+export function vectorAdd(a: number[], b: number[]): number[] {
+  //@ requires a.length === b.length
+  //@ ensures \result.length === a.length
+  //@ ensures forall(k, 0 <= k && k < \result.length ==> \result[k] === a[k] + b[k])
+  //@ ensures sumTo(\result, \result.length) === sumTo(a, a.length) + sumTo(b, b.length)
+  //@ type p nat
+
+  const n = a.length;
+  let result: number[] = [];
+  let p = 0;
+  while (p < n) {
+    //@ invariant 0 <= p && p <= n
+    //@ invariant result.length === p
+    //@ invariant forall(k, 0 <= k && k < p ==> result[k] === a[k] + b[k])
+    //@ invariant sumTo(result, p) === sumTo(a, p) + sumTo(b, p)
+    //@ decreases n - p
+    result = [...result, a[p] + b[p]];
+    p = p + 1;
+  }
+  return result;
+}
+
+// Roll up per-person subtotals from each item's scattered share-vector (one
+// vector per item, each conserving to its own price — the shell builds them with
+// `itemShare`). The composed theorem — the sum-swap — is that nothing leaks in
+// the roll-up: Σ subtotals === Σ item prices, for any claim pattern. Proven by
+// accumulation: the running Σ subtotals equals the running Σ prices, item by item.
+export function itemSubtotals(itemVectors: number[][], prices: number[], n: number): number[] {
+  //@ requires n >= 1
+  //@ requires itemVectors.length === prices.length
+  //@ requires forall(i, 0 <= i && i < itemVectors.length ==> itemVectors[i].length === n)
+  //@ requires forall(i, 0 <= i && i < itemVectors.length ==> sumTo(itemVectors[i], n) === prices[i])
+  //@ requires forall(i, 0 <= i && i < itemVectors.length ==> forall(k, 0 <= k && k < n ==> itemVectors[i][k] >= 0))
+  //@ ensures \result.length === n
+  //@ ensures sumTo(\result, n) === sumTo(prices, prices.length)
+  //@ ensures forall(k, 0 <= k && k < n ==> \result[k] >= 0)
+  //@ type p nat
+  //@ type i nat
+
+  const m = itemVectors.length;
+
+  // Everyone starts at 0.
+  let subtotals: number[] = [];
+  let p = 0;
+  while (p < n) {
+    //@ invariant 0 <= p && p <= n
+    //@ invariant subtotals.length === p
+    //@ invariant sumTo(subtotals, p) === 0
+    //@ invariant forall(k, 0 <= k && k < p ==> subtotals[k] >= 0)
+    //@ decreases n - p
+    subtotals = [...subtotals, 0];
+    p = p + 1;
+  }
+
+  // Add in each item's vector; the running sum stays equal to the prices so far.
+  let i = 0;
+  while (i < m) {
+    //@ invariant 0 <= i && i <= m
+    //@ invariant subtotals.length === n
+    //@ invariant sumTo(subtotals, n) === sumTo(prices, i)
+    //@ invariant forall(k, 0 <= k && k < n ==> subtotals[k] >= 0)
+    //@ decreases m - i
+    subtotals = vectorAdd(subtotals, itemVectors[i]);
+    i = i + 1;
+  }
+  return subtotals;
+}
+
+// The whole bill, leaves to root. Roll items up into per-person subtotals, then
+// split tax and tip across the table — and the cents still add up exactly:
+//
+//   Σ person totals === Σ item prices + tax + tip   (the GRAND TOTAL)
+//
+// for any items, any claim pattern, any roundness G. The thing you can't check
+// by hand on a $237.46 five-way split with 18% tip — proven, end to end, by
+// composing `itemSubtotals` (Σ subtotals === Σ prices) with `billTotals`
+// (Σ totals === Σ subtotals + tax + tip).
+export function bill(itemVectors: number[][], prices: number[], tax: number, tip: number, n: number, G: number): number[] {
+  //@ requires n >= 1
+  //@ requires itemVectors.length === prices.length
+  //@ requires forall(i, 0 <= i && i < itemVectors.length ==> itemVectors[i].length === n)
+  //@ requires forall(i, 0 <= i && i < itemVectors.length ==> sumTo(itemVectors[i], n) === prices[i])
+  //@ requires forall(i, 0 <= i && i < itemVectors.length ==> forall(k, 0 <= k && k < n ==> itemVectors[i][k] >= 0))
+  //@ requires sumTo(prices, prices.length) >= 1
+  //@ requires tax >= 0
+  //@ requires tip >= 0
+  //@ requires G >= 1
+  //@ ensures \result.length === n
+  //@ ensures sumTo(\result, n) === sumTo(prices, prices.length) + tax + tip
+
+  const subtotals = itemSubtotals(itemVectors, prices, n);
+  return billTotals(subtotals, tax, tip, G);
+}

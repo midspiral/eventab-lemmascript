@@ -37,7 +37,7 @@ just **cite small, named lemmas**. Two techniques keep it fast *and* honest:
 - The arithmetic cancellations go through the Dafny standard library.
 
 ```
-check.sh dafny   →   floorShare: 4 verified · allocate.ts: 21 verified · 0 errors  (~7s)
+check.sh dafny   →   floorShare: 4 verified · allocate.ts: 27 verified · 0 errors  (~7s)
 ```
 (`allocate.ts` now holds the kernel **and** the Stage 1 bill model below.)
 
@@ -51,25 +51,32 @@ check.sh dafny   →   floorShare: 4 verified · allocate.ts: 21 verified · 0 e
 
 ## Stage 1 — the bill model (conservation *composes*)
 
-On top of the kernel, two pieces show conservation composing — the property you
-can't check by hand once there's tax, tip, and a five-way split:
+On top of the kernel, the whole bill composes — **leaves to root**, the property
+you can't check by hand on a $237.46 five-way split with 18% tip:
+
+> **`bill`** — `Σ person totals === Σ item prices + tax + tip` (the **grand
+> total**), exactly, for any items, any claim pattern, any roundness G.
+
+It's built from three proven pieces:
 
 > **`itemShare`** — split one item's price across the people who **claimed** it.
-> Proven: `Σ === price` (every cent assigned) **and** every non-claimer gets
-> exactly `0`. That second half fixes a real trap (see
-> [FALSE_START.md](FALSE_START.md) §1): the "obvious" encoding — `allocate` over
-> the whole table with weight 0 for non-claimers — *conserves but overcharges*,
-> because the leftover-cent redistribution can land on someone who didn't order.
-> So we allocate over the claimers only and **scatter** the shares home.
+> Proven: `Σ === price` **and** every non-claimer gets exactly `0`. That second
+> half fixes a real trap (see [FALSE_START.md](FALSE_START.md) §1): the "obvious"
+> encoding — `allocate` over the whole table with weight 0 for non-claimers —
+> *conserves but overcharges*, because the leftover-cent redistribution can land
+> on someone who didn't order. So we allocate over the claimers only and
+> **scatter** the shares home.
 >
-> **`billTotals`** — split tax and tip across the table in proportion to each
-> person's subtotal, and hand everyone `subtotal + taxShare + tipShare`. Proven:
-> `Σ person totals === Σ subtotals + tax + tip`, exactly. It falls straight out
-> of `allocate`'s conservation `ensures` (a same-file method call) plus one
-> `SumToExtend`.
+> **`itemSubtotals`** — roll those per-item vectors up into per-person subtotals.
+> Proven: `Σ subtotals === Σ item prices` (the sum-swap — nothing leaks in the
+> roll-up), via `vectorAdd`'s linearity and an accumulation invariant.
+>
+> **`billTotals`** — split tax and tip across the table proportional to subtotals.
+> Proven: `Σ person totals === Σ subtotals + tax + tip`.
 
-Still to come in Stage 1: the sum-swap (`Σ subtotals === Σ item prices`) tying
-items to totals — then `Σ person totals === grand total`, leaves to root.
+Each step just composes the one below it through its `ensures` — no step
+re-derives conservation, it inherits it. That inheritance *is* the lesson: prove
+the leaf once, and the whole tree is sound.
 
 ## The teaching contrast (v0 → v1)
 
@@ -102,17 +109,18 @@ npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocateNaive.
 
 ## What's next
 
-- **Finish Stage 1** — the sum-swap (`itemSubtotals`: accumulate `itemShare`
-  across items → `Σ subtotals === Σ prices`), then a `bill` composing it with
-  `billTotals` for `Σ person totals === grand total`, leaves to root.
-- **Stages 2–4** (DESIGN §7) — balances & settlement, and the ephemeral op-log.
+- **Stage 2 — balances & settlement** (DESIGN §5) — net what each person paid
+  against what they owe (`Σ balances === 0`), then `settle()` → a list of
+  transfers that drive every balance to 0 and invent no money.
+- **Stages 3–4** (DESIGN §7) — the ephemeral op-log (every reachable tab
+  conserves) and the receipt export.
 
 ## Layout
 
 ```
 src/floorShare.ts      VERIFIED — the G-floor + its bracketing bounds (the only div proof).
 src/allocate.ts        VERIFIED core — kernel (allocate, roundness G) + Stage 1 bill model
-                       (billTotals, itemShare). No floats, no I/O.
+                       (itemShare, itemSubtotals, billTotals, bill). No floats, no I/O.
 src/*.dfy              generated + hand-written lemmas (sumTo, deficit bound, cancellation)
 src/allocateNaive.ts   v0 counterexample (EXPECTED TO FAIL) — the vanished cent
 FALSE_START.md         reject→fix log: encodings that conserved but were still wrong

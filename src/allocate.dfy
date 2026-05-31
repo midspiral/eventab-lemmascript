@@ -286,3 +286,86 @@ method itemShare(price: int, claimers: seq<int>, claimerWeights: seq<int>, n: in
   }
   return result;
 }
+
+method vectorAdd(a: seq<int>, b: seq<int>) returns (res: seq<int>)
+  requires (|a| == |b|)
+  ensures (|res| == |a|)
+  ensures forall k: int :: ((0 <= k) ==> (k < |res|) ==> (res[k] == (a[k] + b[k])))
+  ensures (sumTo(res, |res|) == (sumTo(a, |a|) + sumTo(b, |b|)))
+{
+  var n := |a|;
+  var result: seq<int> := [];
+  var p := 0;
+  while (p < n)
+    invariant (0 <= p)
+    invariant (p <= n)
+    invariant (|result| == p)
+    invariant forall k: int :: ((0 <= k) ==> (k < p) ==> (result[k] == (a[k] + b[k])))
+    invariant (sumTo(result, p) == (sumTo(a, p) + sumTo(b, p)))
+    decreases (n - p)
+  {
+    SumToExtend(result, a[p] + b[p], p);
+    result := (result + [(a[p] + b[p])]);
+    p := (p + 1);
+  }
+  return result;
+}
+
+method itemSubtotals(itemVectors: seq<seq<int>>, prices: seq<int>, n: int) returns (res: seq<int>)
+  requires (n >= 1)
+  requires (|itemVectors| == |prices|)
+  requires forall i: int :: ((0 <= i) ==> (i < |itemVectors|) ==> (|itemVectors[i]| == n))
+  requires forall i: int :: ((0 <= i) ==> (i < |itemVectors|) ==> (sumTo(itemVectors[i], n) == prices[i]))
+  requires forall i: int :: ((0 <= i) ==> (i < |itemVectors|) ==> forall k: int :: ((0 <= k) ==> (k < n) ==> (itemVectors[i][k] >= 0)))
+  ensures (|res| == n)
+  ensures (sumTo(res, n) == sumTo(prices, |prices|))
+  ensures forall k: int :: ((0 <= k) ==> (k < n) ==> (res[k] >= 0))
+{
+  var m := |itemVectors|;
+  var subtotals: seq<int> := [];
+  var p := 0;
+  while (p < n)
+    invariant (0 <= p)
+    invariant (p <= n)
+    invariant (|subtotals| == p)
+    invariant (sumTo(subtotals, p) == 0)
+    invariant forall k: int :: ((0 <= k) ==> (k < p) ==> (subtotals[k] >= 0))
+    decreases (n - p)
+  {
+    SumToExtend(subtotals, 0, p);
+    subtotals := (subtotals + [0]);
+    p := (p + 1);
+  }
+  var i := 0;
+  while (i < m)
+    invariant (0 <= i)
+    invariant (i <= m)
+    invariant (|subtotals| == n)
+    invariant (sumTo(subtotals, n) == sumTo(prices, i))
+    invariant forall k: int :: ((0 <= k) ==> (k < n) ==> (subtotals[k] >= 0))
+    decreases (m - i)
+  {
+    subtotals := vectorAdd(subtotals, itemVectors[i]);
+    i := (i + 1);
+  }
+  return subtotals;
+}
+
+method bill(itemVectors: seq<seq<int>>, prices: seq<int>, tax: int, tip: int, n: int, G: int) returns (res: seq<int>)
+  requires (n >= 1)
+  requires (|itemVectors| == |prices|)
+  requires forall i: int :: ((0 <= i) ==> (i < |itemVectors|) ==> (|itemVectors[i]| == n))
+  requires forall i: int :: ((0 <= i) ==> (i < |itemVectors|) ==> (sumTo(itemVectors[i], n) == prices[i]))
+  requires forall i: int :: ((0 <= i) ==> (i < |itemVectors|) ==> forall k: int :: ((0 <= k) ==> (k < n) ==> (itemVectors[i][k] >= 0)))
+  requires (sumTo(prices, |prices|) >= 1)
+  requires (tax >= 0)
+  requires (tip >= 0)
+  requires (G >= 1)
+  ensures (|res| == n)
+  ensures (sumTo(res, n) == ((sumTo(prices, |prices|) + tax) + tip))
+{
+  var i_t4 := itemSubtotals(itemVectors, prices, n);
+  var subtotals := i_t4;
+  var i_t5 := billTotals(subtotals, tax, tip, G);
+  return i_t5;
+}
