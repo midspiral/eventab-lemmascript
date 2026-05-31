@@ -2,17 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 // The VERIFIED money core (Dafny-proven, integer cents). The shell is
 // UNTRUSTED: it may only CALL these proven ops with inputs that satisfy their
 // preconditions — every call below is gated (see `compute()`):
-//   • bill      requires Σ prices ≥ 1   (at least one priced, claimed item)
-//   • balances  requires Σ paid === Σ owed   (the tab is fully paid)
-//   • settle    requires Σ balances === 0    (handed to us by balances)
-import { itemShare, bill, balances, settle } from "../../src/allocate";
+//   • bill          requires Σ prices ≥ 1   (at least one priced, claimed item)
+//   • balances      requires Σ paid === Σ owed   (the tab is fully paid)
+//   • settleRounded requires 0 ≤ hub < n   and proves Σ net === 0
+import { itemShare, bill, balances, settleRounded } from "../../src/allocate";
 
-// Roundness G: shares are quantised to whole multiples of G (1¢ / $1 / $5).
-// Conservation is PROVEN for every G ≥ 1 (no `total % G` precondition — one
-// share per allocation absorbs the sub-G remainder), so all three are safe to
-// offer. At G > 1 a person's *total* may carry odd cents (rounding is per
-// line-item, and an absorber soaks the remainder) — that's the point on show:
-// you can round and still sum to the exact tab.
+// Rounding is applied to the SETTLEMENT only — each non-payer's transfer is
+// rounded to a whole multiple of G and the payer (hub) absorbs the difference.
+// Shares themselves are always computed to the exact cent (G = 1), so an even
+// split stays even. `settleRounded` proves the rounding still nets to zero.
 const ROUNDNESS: { g: number; label: string }[] = [
   { g: 1, label: "1¢" },
   { g: 100, label: "$1" },
@@ -37,8 +35,8 @@ type State = {
   tax: string;
   tip: string;
   paid: string[];
-  G: number;
-  hub: number; // who collects/distributes in the star settlement
+  G: number; // settlement rounding: 1=cent, 100=$1, 500=$5
+  hub: number; // who fronted the bill / absorbs the rounding
 };
 
 let _id = 1;
@@ -106,20 +104,18 @@ function loadState(): State {
 type Result = {
   hasItems: boolean; // Σ prices ≥ 1 — bill's precondition holds
   fullyPaid: boolean; // Σ paid === grand — balances' precondition holds
-  totals: number[]; // per-person OWES (from bill); zeros until hasItems
-  bal: number[]; // balances; valid only when fullyPaid
-  net: number[]; // settlement; valid only when fullyPaid
+  totals: number[]; // per-person OWES, exact to the cent (from bill); zeros until hasItems
+  bal: number[]; // exact balances; valid only when fullyPaid
+  net: number[]; // rounded settlement (hub absorbs); valid only when fullyPaid
   grand: number;
   paidTotal: number;
 };
 
 function compute(s: State): Result {
   const n = s.people.length;
-  const G = s.G;
   const zeros = s.people.map(() => 0);
 
-  // Only claimed, positive-price items — each gives itemShare a valid call
-  // (claimers.length ≥ 1) and a positive weight sum.
+  // Only claimed, positive-price items — each gives itemShare a valid call.
   const usable = s.items
     .map((it) => ({ price: cents(it.price), claimers: it.claims.flatMap((c, i) => (c ? [i] : [])) }))
     .filter((it) => it.price > 0 && it.claimers.length >= 1);
@@ -128,15 +124,15 @@ function compute(s: State): Result {
   const tip = cents(s.tip);
   const grand = sum(prices) + tax + tip;
 
-  // GUARD: bill requires n ≥ 1 and Σ prices ≥ 1. Without a priced item there is
-  // nothing to split — don't call the core.
+  // GUARD: bill requires n ≥ 1 and Σ prices ≥ 1. Shares are split to the EXACT
+  // cent (G = 1) — rounding happens only at settlement, so even splits stay even.
   const hasItems = n >= 1 && sum(prices) >= 1;
   let totals = zeros;
   if (hasItems) {
     const itemVectors = usable.map((it) =>
-      itemShare(it.price, it.claimers, it.claimers.map(() => 1), n, G),
+      itemShare(it.price, it.claimers, it.claimers.map(() => 1), n, 1),
     );
-    totals = bill(itemVectors, prices, tax, tip, n, G);
+    totals = bill(itemVectors, prices, tax, tip, n, 1);
   }
 
   const paidV = s.paid.map(cents);
@@ -149,7 +145,7 @@ function compute(s: State): Result {
   let net = zeros;
   if (fullyPaid) {
     bal = balances(paidV, totals); // Σ paid === Σ totals === grand ✓
-    net = settle(bal); // Σ bal === 0 (from balances) ✓
+    net = settleRounded(bal, s.hub, s.G); // round transfers, hub absorbs; Σ net === 0 ✓
   }
 
   return { hasItems, fullyPaid, totals, bal, net, grand, paidTotal };
@@ -216,8 +212,11 @@ export default function App() {
   // ── paid ──
   const setPaidAt = (idx: number, v: string) =>
     setPaid((pd) => pd.map((x, i) => (i === idx ? v : x)));
-  const paidAll = (idx: number) =>
+  // one person fronted the whole bill → they're also the settlement hub
+  const paidAll = (idx: number) => {
     setPaid(people.map((_, i) => (i === idx ? (r.grand / 100).toFixed(2) : "0")));
+    setHub(idx);
+  };
 
   // ── tip helper ── (% of the items subtotal)
   const subtotal = r.grand - cents(tax) - cents(tip);
@@ -247,11 +246,13 @@ export default function App() {
     history.replaceState(null, "", location.pathname + location.search);
   };
 
-  // star settlement: each non-hub person squares their balance with the hub
+  // star settlement: each non-hub person squares their (rounded) balance with the hub
   const transfers = people
-    .map((nm, p) => ({ p, nm, bal: r.net[p] ?? 0 }))
-    .filter((x) => x.p !== hub && x.bal !== 0);
+    .map((nm, p) => ({ p, nm, amt: r.net[p] ?? 0 }))
+    .filter((x) => x.p !== hub && x.amt !== 0);
   const shortfall = r.grand - r.paidTotal;
+  // what the hub gives up (or keeps) because the transfers were rounded
+  const hubRounding = r.fullyPaid ? (r.net[hub] ?? 0) - (r.bal[hub] ?? 0) : 0;
 
   return (
     <div className="wrap">
@@ -366,7 +367,7 @@ export default function App() {
           </div>
         </div>
         <div>
-          <h2>Round shares</h2>
+          <h2>Round payments</h2>
           <div className="seg">
             {ROUNDNESS.map((rr) => (
               <button
@@ -421,7 +422,7 @@ export default function App() {
           <h2>The split</h2>
           {r.fullyPaid && (
             <label className="hubpick">
-              settle via{" "}
+              hub{" "}
               <select value={hub} onChange={(e) => setHub(Number(e.target.value))}>
                 {people.map((nm, i) => (
                   <option key={i} value={i}>
@@ -443,31 +444,20 @@ export default function App() {
                   <th>Person</th>
                   <th>Owes</th>
                   <th>Paid</th>
-                  {r.fullyPaid && <th>Balance</th>}
                 </tr>
               </thead>
               <tbody>
-                {people.map((nm, i) => {
-                  const b = r.bal[i] ?? 0;
-                  return (
-                    <tr key={i}>
-                      <td>{nm || `Person ${i + 1}`}</td>
-                      <td className="num">{fmt(r.totals[i] ?? 0)}</td>
-                      <td className="num">{fmt(cents(paid[i] ?? "0"))}</td>
-                      {r.fullyPaid && (
-                        <td className={"num " + (b > 0 ? "pos" : b < 0 ? "neg" : "")}>
-                          {b > 0 ? "+" : ""}
-                          {fmt(b)}
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
+                {people.map((nm, i) => (
+                  <tr key={i}>
+                    <td>{nm || `Person ${i + 1}`}</td>
+                    <td className="num">{fmt(r.totals[i] ?? 0)}</td>
+                    <td className="num">{fmt(cents(paid[i] ?? "0"))}</td>
+                  </tr>
+                ))}
                 <tr className="grandrow">
                   <td>Total</td>
                   <td className="num">{fmt(sum(r.totals))}</td>
                   <td className="num">{fmt(r.paidTotal)}</td>
-                  {r.fullyPaid && <td className="num">{fmt(sum(r.bal))}</td>}
                 </tr>
               </tbody>
             </table>
@@ -478,23 +468,33 @@ export default function App() {
                 transfers.length === 0 ? (
                   <p className="muted">Everyone's already square.</p>
                 ) : (
-                  <ul>
-                    {transfers.map((t) => (
-                      <li key={t.p}>
-                        {t.bal < 0 ? (
-                          <>
-                            <b>{t.nm}</b> pays <b>{people[hub]}</b>{" "}
-                            <span className="amt">{fmt(-t.bal)}</span>
-                          </>
-                        ) : (
-                          <>
-                            <b>{people[hub]}</b> pays <b>{t.nm}</b>{" "}
-                            <span className="amt">{fmt(t.bal)}</span>
-                          </>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <ul>
+                      {transfers.map((t) => (
+                        <li key={t.p}>
+                          {t.amt < 0 ? (
+                            <>
+                              <b>{t.nm}</b> pays <b>{people[hub]}</b>{" "}
+                              <span className="amt">{fmt(-t.amt)}</span>
+                            </>
+                          ) : (
+                            <>
+                              <b>{people[hub]}</b> pays <b>{t.nm}</b>{" "}
+                              <span className="amt">{fmt(t.amt)}</span>
+                            </>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    {hubRounding !== 0 && (
+                      <p className="muted rounding-note">
+                        Rounded to {ROUNDNESS.find((x) => x.g === G)?.label} —{" "}
+                        <b>{people[hub] || `Person ${hub + 1}`}</b>{" "}
+                        {hubRounding < 0 ? "covers" : "keeps"} the {fmt(Math.abs(hubRounding))}{" "}
+                        rounding difference.
+                      </p>
+                    )}
+                  </>
                 )
               ) : (
                 <p className="warn">
@@ -514,7 +514,7 @@ export default function App() {
                 data-testid="badge-settle"
               >
                 {r.fullyPaid
-                  ? `✓ verified · balances net to zero: Σ = ${fmt(sum(r.bal))}`
+                  ? `✓ verified · settlement nets to zero: Σ = ${fmt(sum(r.net))}`
                   : "○ settlement nets to zero once the tab is fully paid"}
               </span>
             </div>
@@ -532,13 +532,13 @@ export default function App() {
       <footer>
         <p>
           Every number above is computed by a <b>Dafny-verified core</b> (integer cents). Proven, for
-          all inputs: per-person shares <b>sum exactly to the tab</b> (no cent created or lost) at any
-          rounding, non-claimers pay <b>0</b>, each share is fair to within one rounding unit, and
-          when the tab is fully paid the settlement <b>nets to zero</b>. The page (this React shell)
-          is untrusted — it only calls the proven ops with valid inputs.
+          all inputs: per-person shares are <b>exact to the cent</b> and <b>sum to the tab</b> (no cent
+          created or lost), non-claimers pay <b>0</b>, and rounding the settlement to your chosen unit
+          — with the payer absorbing the difference — <b>still nets to zero</b>. The page (this React
+          shell) is untrusted: it only calls the proven ops with valid inputs.
         </p>
         <p className="muted">
-          EvenTab · {n} {n === 1 ? "person" : "people"} · rounded to{" "}
+          EvenTab · {n} {n === 1 ? "person" : "people"} · payments rounded to{" "}
           {ROUNDNESS.find((x) => x.g === G)?.label} · no account, no server — your tab stays in this
           browser (and in the share link).
         </p>

@@ -427,6 +427,38 @@ method settle(balances: seq<int>) returns (res: seq<int>)
   return net;
 }
 
+method settleRounded(balances: seq<int>, hub: int, G: int) returns (res: seq<int>)
+  requires (|balances| >= 1)
+  requires (0 <= hub)
+  requires (hub < |balances|)
+  requires (G >= 1)
+  ensures (|res| == |balances|)
+  ensures (sumTo(res, |res|) == 0)
+{
+  var n := |balances|;
+  var half := JSFloorDiv(G, 2);
+  var net: seq<int> := [];
+  var s := 0;
+  var p := 0;
+  while (p < n)
+    invariant (0 <= p)
+    invariant (p <= n)
+    invariant (|net| == p)
+    invariant (sumTo(net, p) == s)
+    invariant ((hub < p) ==> (net[hub] == 0))
+    decreases (n - p)
+  {
+    var v := (if (p == hub) then 0 else (G * JSFloorDiv((balances[p] + half), G)));
+    SumToExtend(net, v, p);
+    net := (net + [v]);
+    s := (s + v);
+    p := (p + 1);
+  }
+  SumToUpdate(net, hub, n, - s);
+  net := net[hub := (net[hub] - s)];
+  return net;
+}
+
 method applyOp(bal: seq<int>, from: int, to: int, amount: int) returns (res: seq<int>)
   requires (0 <= from)
   requires (from < |bal|)

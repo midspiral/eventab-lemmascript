@@ -365,6 +365,49 @@ export function settle(balances: number[]): number[] {
   return net;
 }
 
+// settleRounded(balances, hub, G): the SAME star settlement, but each non-hub
+// transfer is ROUNDED to a whole multiple of G and the HUB (the person who
+// fronted the bill) absorbs the leftover — so every other person pays/receives a
+// round number while the books still balance exactly. Shares stay computed to the
+// cent (G is applied here, to the settlement, NOT to the per-item split — so an
+// even split stays even). The load-bearing fact, the one that makes "the payer
+// eats the rounding" safe:
+//
+//   Σ net === 0     (rounding the transfers invents and loses no money)
+//
+// net[p] for p ≠ hub is balances[p] rounded to the nearest G; net[hub] is set to
+// whatever makes the sum zero. At G === 1 there is no rounding and net === balances.
+export function settleRounded(balances: number[], hub: number, G: number): number[] {
+  //@ requires balances.length >= 1
+  //@ requires 0 <= hub && hub < balances.length
+  //@ requires G >= 1
+  //@ ensures \result.length === balances.length
+  //@ ensures sumTo(\result, \result.length) === 0
+  //@ type p nat
+
+  const n = balances.length;
+  const half = Math.floor(G / 2);
+
+  let net: number[] = [];
+  let s = 0;
+  let p = 0;
+  while (p < n) {
+    //@ invariant 0 <= p && p <= n
+    //@ invariant net.length === p
+    //@ invariant sumTo(net, p) === s
+    //@ invariant hub < p ==> net[hub] === 0
+    //@ decreases n - p
+    const v = p === hub ? 0 : G * Math.floor((balances[p] + half) / G);
+    net = [...net, v];
+    s = s + v;
+    p = p + 1;
+  }
+  // The hub absorbs the remainder so the books still sum to zero. (net[hub] is 0
+  // here, so this sets it to -s = -(Σ of the rounded non-hub transfers).)
+  net[hub] = net[hub] - s;
+  return net;
+}
+
 // ════════════════════════════════════════════════════════════════
 // Ephemeral op-log (Stage 3) — every reachable tab conserves.
 //

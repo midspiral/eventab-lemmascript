@@ -176,19 +176,19 @@ their preconditions, and it *gates* on those preconditions rather than calling o
 contract —
 
 - `bill` runs only once there is at least one priced, claimed item (`Σ prices ≥ 1`);
-- `balances` / `settle` run only once the tab is fully paid (`Σ paid === grand`), so the
-  `Σ balances === 0` guarantee is always in-contract — until then the UI shows what is
+- `balances` / `settleRounded` run only once the tab is fully paid (`Σ paid === grand`), so
+  the `Σ net === 0` guarantee is always in-contract — until then the UI shows what is
   still owed instead of a settlement.
 
 Every figure on screen — per-person shares, the tax/tip split, the star settlement —
-comes from `src/allocate.ts`. The verified rounding is on display: switch *round shares*
-to $1 or $5 and the per-line shares snap to the unit while the total still sums to the
-exact tab (conservation holds for every `G`, with one share absorbing the sub-`G`
-remainder). State persists to `localStorage` and to a shareable URL hash; no account,
-no server.
+comes from `src/allocate.ts`. Shares are computed to the **exact cent**, so an even split
+stays even. The rounding control applies only to the **settlement**: pick $1 or $5 and
+each non-payer's transfer rounds to that unit while the **payer absorbs the difference** —
+`settleRounded` proves it still nets to zero. State persists to `localStorage` and to a
+shareable URL hash; no account, no server.
 
 Browser-tested headless (Playwright + chromium) against the live `dist/index.html`:
-17/17 assertions — values, the conservation/settlement badges, the rounding demo, and
+24/24 assertions — values, the conservation/settlement badges, the rounding demo, and
 the precondition gate.
 
 ### Deploy
