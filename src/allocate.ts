@@ -323,6 +323,20 @@ export function balances(paid: number[], owed: number[]): number[] {
   return result;
 }
 
+// ── Historical note: a "verified ≠ right spec" lesson ────────────────
+// EvenTab v1 rounded each person's SHARE to the chosen unit by passing roundness
+// G > 1 into `allocate` (hence into `itemShare`/`bill`). Those ops are correctly
+// specified and proven — Σ conserves, and each share is fair to within G — yet
+// rounding at the line-item layer is the wrong spec for a bill: an even $16/$16
+// split turns into $17/$15, and each allocation's sub-G remainder lands on whoever
+// is last in it (often someone who didn't pay). The proofs held; the composition
+// didn't match what we wanted. The fix keeps shares EXACT (the app calls
+// `allocate`/`bill` with G = 1) and rounds only the SETTLEMENT, with the payer
+// absorbing — see `settleRounded`. `settle` below is the original exact-only star
+// settlement; `settleRounded` generalises it (chosen hub + rounding) and is what
+// the app uses. Both are kept: `settle`'s tighter `net[p] === balances[p]` and
+// `allocate`'s arbitrary-G roundness theorem stay verified and on show.
+
 // settle(balances): the payments that square everyone up, routed through a HUB
 // (the last person). For each other person p there is one transfer with the
 // hub of `balances[p]` — positive = the hub pays p (p was a creditor), negative
