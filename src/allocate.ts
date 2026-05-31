@@ -364,3 +364,71 @@ export function settle(balances: number[]): number[] {
   net = [...net, hubNet];
   return net;
 }
+
+// ════════════════════════════════════════════════════════════════
+// Ephemeral op-log (Stage 3) — every reachable tab conserves.
+//
+// Multiple devices edit one shared tab; the Durable Object serializes the edits
+// into an append-only log of claims/payments and replays it. We model each edit
+// as a balanced LEDGER ENTRY — `amount` moved from one account to another (a
+// claim moves a share onto a person, a payment moves it off) — and prove the
+// one thing that must hold over EVERY replay:
+//
+//   Σ balances === 0   for any op log, in any order   (no money invented)
+//
+// That invariant is what the live sync rests on. We deliberately do NOT verify
+// convergence (that edits commute) — the DO's serialization hands us that for
+// free; the load-bearing fact is the money, not the ordering.
+// ════════════════════════════════════════════════════════════════
+
+// One edit: move `amount` from account `from` to account `to`. Balanced, so it
+// preserves the running total exactly — the invariant-preservation step.
+export function applyOp(bal: number[], from: number, to: number, amount: number): number[] {
+  //@ requires 0 <= from && from < bal.length
+  //@ requires 0 <= to && to < bal.length
+  //@ ensures \result.length === bal.length
+  //@ ensures sumTo(\result, \result.length) === sumTo(bal, bal.length)
+
+  let result = bal;
+  result[from] = result[from] - amount;
+  result[to] = result[to] + amount;
+  return result;
+}
+
+// Replay an append-only log over an empty tab. However many edits, in whatever
+// order the devices produced them, the books still balance: Σ === 0.
+export function replay(froms: number[], tos: number[], amounts: number[], n: number): number[] {
+  //@ requires n >= 1
+  //@ requires froms.length === tos.length
+  //@ requires tos.length === amounts.length
+  //@ requires forall(k, 0 <= k && k < froms.length ==> 0 <= froms[k] && froms[k] < n)
+  //@ requires forall(k, 0 <= k && k < tos.length ==> 0 <= tos[k] && tos[k] < n)
+  //@ ensures \result.length === n
+  //@ ensures sumTo(\result, n) === 0
+  //@ type p nat
+  //@ type k nat
+
+  // Empty tab: everyone at 0.
+  let bal: number[] = [];
+  let p = 0;
+  while (p < n) {
+    //@ invariant 0 <= p && p <= n
+    //@ invariant bal.length === p
+    //@ invariant sumTo(bal, p) === 0
+    //@ decreases n - p
+    bal = [...bal, 0];
+    p = p + 1;
+  }
+
+  // Apply each edit; each preserves Σ, so Σ stays 0 — for any log, any order.
+  let k = 0;
+  while (k < froms.length) {
+    //@ invariant 0 <= k && k <= froms.length
+    //@ invariant bal.length === n
+    //@ invariant sumTo(bal, n) === 0
+    //@ decreases froms.length - k
+    bal = applyOp(bal, froms[k], tos[k], amounts[k]);
+    k = k + 1;
+  }
+  return bal;
+}

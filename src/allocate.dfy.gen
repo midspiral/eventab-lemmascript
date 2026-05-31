@@ -291,3 +291,52 @@ method settle(balances: seq<int>) returns (res: seq<int>)
   net := (net + [hubNet]);
   return net;
 }
+
+method applyOp(bal: seq<int>, from: int, to: int, amount: int) returns (res: seq<int>)
+  requires (0 <= from)
+  requires (from < |bal|)
+  requires (0 <= to)
+  requires (to < |bal|)
+  ensures (|res| == |bal|)
+  ensures (sumTo(res, |res|) == sumTo(bal, |bal|))
+{
+  var result := bal;
+  result := result[from := (result[from] - amount)];
+  result := result[to := (result[to] + amount)];
+  return result;
+}
+
+method replay(froms: seq<int>, tos: seq<int>, amounts: seq<int>, n: int) returns (res: seq<int>)
+  requires (n >= 1)
+  requires (|froms| == |tos|)
+  requires (|tos| == |amounts|)
+  requires forall k: int :: ((0 <= k) ==> (k < |froms|) ==> ((0 <= froms[k]) && (froms[k] < n)))
+  requires forall k: int :: ((0 <= k) ==> (k < |tos|) ==> ((0 <= tos[k]) && (tos[k] < n)))
+  ensures (|res| == n)
+  ensures (sumTo(res, n) == 0)
+{
+  var bal: seq<int> := [];
+  var p := 0;
+  while (p < n)
+    invariant (0 <= p)
+    invariant (p <= n)
+    invariant (|bal| == p)
+    invariant (sumTo(bal, p) == 0)
+    decreases (n - p)
+  {
+    bal := (bal + [0]);
+    p := (p + 1);
+  }
+  var k := 0;
+  while (k < |froms|)
+    invariant (0 <= k)
+    invariant (k <= |froms|)
+    invariant (|bal| == n)
+    invariant (sumTo(bal, n) == 0)
+    decreases (|froms| - k)
+  {
+    bal := applyOp(bal, froms[k], tos[k], amounts[k]);
+    k := (k + 1);
+  }
+  return bal;
+}

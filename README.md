@@ -37,7 +37,7 @@ just **cite small, named lemmas**. Two techniques keep it fast *and* honest:
 - The arithmetic cancellations go through the Dafny standard library.
 
 ```
-check.sh dafny   →   floorShare: 4 verified · allocate.ts: 31 verified · 0 errors  (~7s)
+check.sh dafny   →   floorShare: 4 verified · allocate.ts: 35 verified · 0 errors  (~7s)
 ```
 (`allocate.ts` now holds the kernel **and** the Stage 1 bill model below.)
 
@@ -94,6 +94,24 @@ Once everyone has a total, who actually pays whom:
 > NP-hard, DESIGN §5), so the shell can swap in a fancier matcher later — the
 > *theorem* it must satisfy is the one proved here.
 
+## Stage 3 — the ephemeral op-log (what makes the live sync safe)
+
+A shared tab is edited from several phones at once. The Durable Object serializes
+the edits into an append-only log and replays it. We model each edit as a
+balanced ledger entry and prove the one thing the sync rests on:
+
+> **`applyOp`** — move `amount` between two accounts (a claim moves a share onto
+> a person, a payment moves it off). Proven: it leaves the running total
+> **unchanged** — the invariant-preservation step.
+>
+> **`replay`** — fold any op log over an empty tab. Proven: **`Σ === 0`**, for
+> however many edits, **in whatever order** the devices produced them.
+
+That's the load-bearing fact. We deliberately **don't** verify that edits commute
+(*convergence*) — the DO's serialization hands us that for free, and verifying it
+would be re-proving the architecture's own guarantee. The money is the part that
+isn't free, so the money is the part we prove.
+
 ## The teaching contrast (v0 → v1)
 
 `src/allocateNaive.ts` is the version you write first — floor each share, ship
@@ -125,11 +143,14 @@ npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocateNaive.
 
 ## What's next
 
-- **Stage 3 — the ephemeral op-log** (DESIGN §6) — claims/payments as an
-  append-only log; **every reachable tab conserves** (the money invariants hold
-  over any replay), which is what makes the live multi-device sync safe.
-- **Stage 4** — receipt export (DESIGN §7), and wrapping the verified core in a
-  thin UI + the Cloudflare Durable Object backend.
+The verified **money core is complete** — Stages 0–3 cover allocate, the bill,
+settlement, and the op-log. What remains is the app around it:
+
+- **Stage 4** — a verified receipt export (DESIGN §7): a printable summary that
+  re-totals to the bill (projection soundness).
+- **The shell** — wrap the core in a thin React UI (it can only *call* proven
+  operations, never re-implement them) on the Cloudflare Durable Object backend,
+  and run it browser-first end to end.
 
 ## Layout
 
@@ -137,7 +158,8 @@ npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocateNaive.
 src/floorShare.ts      VERIFIED — the G-floor + its bracketing bounds (the only div proof).
 src/allocate.ts        VERIFIED core — kernel (allocate, roundness G) + Stage 1 bill model
                        (itemShare, itemSubtotals, billTotals, bill) + Stage 2
-                       (balances, settle). No floats, no I/O.
+                       (balances, settle) + Stage 3 op-log (applyOp, replay).
+                       No floats, no I/O.
 src/*.dfy              generated + hand-written lemmas (sumTo, deficit bound, cancellation)
 src/allocateNaive.ts   v0 counterexample (EXPECTED TO FAIL) — the vanished cent
 FALSE_START.md         reject→fix log: encodings that conserved but were still wrong
