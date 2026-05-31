@@ -84,3 +84,77 @@ method allocate(total: int, weights: seq<int>, G: int) returns (res: seq<int>)
   result := result[(n - 1) := (result[(n - 1)] + rem)];
   return result;
 }
+
+method billTotals(subtotals: seq<int>, tax: int, tip: int, G: int) returns (res: seq<int>)
+  requires (|subtotals| >= 1)
+  requires forall k: int :: ((0 <= k) ==> (k < |subtotals|) ==> (subtotals[k] >= 0))
+  requires (sumTo(subtotals, |subtotals|) >= 1)
+  requires (tax >= 0)
+  requires (tip >= 0)
+  requires (G >= 1)
+  ensures (|res| == |subtotals|)
+  ensures (sumTo(res, |res|) == ((sumTo(subtotals, |subtotals|) + tax) + tip))
+{
+  var n := |subtotals|;
+  var i_t1 := allocate(tax, subtotals, G);
+  var taxShares := i_t1;
+  var i_t2 := allocate(tip, subtotals, G);
+  var tipShares := i_t2;
+  var totals: seq<int> := [];
+  var p := 0;
+  while (p < n)
+    invariant (0 <= p)
+    invariant (p <= n)
+    invariant (|totals| == p)
+    invariant (sumTo(totals, p) == ((sumTo(subtotals, p) + sumTo(taxShares, p)) + sumTo(tipShares, p)))
+    decreases (n - p)
+  {
+    totals := (totals + [((subtotals[p] + taxShares[p]) + tipShares[p])]);
+    p := (p + 1);
+  }
+  return totals;
+}
+
+method itemShare(price: int, claimers: seq<int>, claimerWeights: seq<int>, n: int, G: int) returns (res: seq<int>)
+  requires (price >= 0)
+  requires (n >= 1)
+  requires (|claimers| >= 1)
+  requires (|claimers| == |claimerWeights|)
+  requires forall j: int :: ((0 <= j) ==> (j < |claimers|) ==> ((0 <= claimers[j]) && (claimers[j] < n)))
+  requires forall j: int :: ((0 <= j) ==> (j < |claimerWeights|) ==> (claimerWeights[j] >= 0))
+  requires (sumTo(claimerWeights, |claimerWeights|) >= 1)
+  requires (G >= 1)
+  ensures (|res| == n)
+  ensures (sumTo(res, n) == price)
+  ensures forall q: int :: ((0 <= q) ==> (q < n) ==> !((q in claimers)) ==> (res[q] == 0))
+{
+  var c := |claimers|;
+  var i_t3 := allocate(price, claimerWeights, G);
+  var shares := i_t3;
+  var result: seq<int> := [];
+  var p := 0;
+  while (p < n)
+    invariant (0 <= p)
+    invariant (p <= n)
+    invariant (|result| == p)
+    invariant (sumTo(result, p) == 0)
+    invariant forall q: int :: ((0 <= q) ==> (q < p) ==> (result[q] == 0))
+    decreases (n - p)
+  {
+    result := (result + [0]);
+    p := (p + 1);
+  }
+  var j := 0;
+  while (j < c)
+    invariant (0 <= j)
+    invariant (j <= c)
+    invariant (|result| == n)
+    invariant (sumTo(result, n) == sumTo(shares, j))
+    invariant forall q: int :: ((0 <= q) ==> (q < n) ==> (forall jp: int :: ((0 <= jp) ==> (jp < j) ==> (claimers[jp] != q))) ==> (result[q] == 0))
+    decreases (c - j)
+  {
+    result := result[claimers[j] := (result[claimers[j]] + shares[j])];
+    j := (j + 1);
+  }
+  return result;
+}

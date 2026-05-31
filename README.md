@@ -37,8 +37,9 @@ just **cite small, named lemmas**. Two techniques keep it fast *and* honest:
 - The arithmetic cancellations go through the Dafny standard library.
 
 ```
-check.sh dafny   →   floorShare: 4 verified · allocate: 17 verified · 0 errors  (~7s)
+check.sh dafny   →   floorShare: 4 verified · allocate.ts: 21 verified · 0 errors  (~7s)
 ```
+(`allocate.ts` now holds the kernel **and** the Stage 1 bill model below.)
 
 > Two proof-engineering lessons worth keeping. **(1)** A first attempt crammed
 > the nonlinear reasoning *inline* and **timed out past 150 s**; quarantining
@@ -47,6 +48,28 @@ check.sh dafny   →   floorShare: 4 verified · allocate: 17 verified · 0 erro
 > against the opaque axiom — verifies instantly, whereas the equivalent
 > cross-multiplied *inequality* (a product under a quantifier) times out. The
 > structure, not the math, is the cost.
+
+## Stage 1 — the bill model (conservation *composes*)
+
+On top of the kernel, two pieces show conservation composing — the property you
+can't check by hand once there's tax, tip, and a five-way split:
+
+> **`itemShare`** — split one item's price across the people who **claimed** it.
+> Proven: `Σ === price` (every cent assigned) **and** every non-claimer gets
+> exactly `0`. That second half fixes a real trap (see
+> [FALSE_START.md](FALSE_START.md) §1): the "obvious" encoding — `allocate` over
+> the whole table with weight 0 for non-claimers — *conserves but overcharges*,
+> because the leftover-cent redistribution can land on someone who didn't order.
+> So we allocate over the claimers only and **scatter** the shares home.
+>
+> **`billTotals`** — split tax and tip across the table in proportion to each
+> person's subtotal, and hand everyone `subtotal + taxShare + tipShare`. Proven:
+> `Σ person totals === Σ subtotals + tax + tip`, exactly. It falls straight out
+> of `allocate`'s conservation `ensures` (a same-file method call) plus one
+> `SumToExtend`.
+
+Still to come in Stage 1: the sum-swap (`Σ subtotals === Σ item prices`) tying
+items to totals — then `Σ person totals === grand total`, leaves to root.
 
 ## The teaching contrast (v0 → v1)
 
@@ -79,15 +102,18 @@ npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocateNaive.
 
 ## What's next
 
-- **Stages 1–4** (DESIGN §7) — the bill model (items, proportional tax/tip),
-  balances & settlement, and the ephemeral op-log — each composing on
-  `allocate`, so conservation propagates from the leaves to the grand total.
+- **Finish Stage 1** — the sum-swap (`itemSubtotals`: accumulate `itemShare`
+  across items → `Σ subtotals === Σ prices`), then a `bill` composing it with
+  `billTotals` for `Σ person totals === grand total`, leaves to root.
+- **Stages 2–4** (DESIGN §7) — balances & settlement, and the ephemeral op-log.
 
 ## Layout
 
 ```
 src/floorShare.ts      VERIFIED — the G-floor + its bracketing bounds (the only div proof).
-src/allocate.ts        VERIFIED core — allocate (largest-remainder, roundness G). No floats, no I/O.
+src/allocate.ts        VERIFIED core — kernel (allocate, roundness G) + Stage 1 bill model
+                       (billTotals, itemShare). No floats, no I/O.
 src/*.dfy              generated + hand-written lemmas (sumTo, deficit bound, cancellation)
 src/allocateNaive.ts   v0 counterexample (EXPECTED TO FAIL) — the vanished cent
+FALSE_START.md         reject→fix log: encodings that conserved but were still wrong
 ```

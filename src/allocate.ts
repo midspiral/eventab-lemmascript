@@ -93,3 +93,100 @@ export function allocate(total: number, weights: number[], G: number): number[] 
   result[n - 1] = result[n - 1] + rem;
   return result;
 }
+
+// ════════════════════════════════════════════════════════════════
+// Bill model (Stage 1) — conservation COMPOSES on top of `allocate`.
+//
+// Given each person's item subtotal, split tax and tip across the table
+// in proportion to those subtotals (allocate weighted by subtotal), and
+// hand each person  subtotal + taxShare + tipShare. The composed
+// theorem — the one a 5-way split with 18% tip can't be checked by hand:
+//
+//   Σ person totals === Σ subtotals + tax + tip   (the grand total)
+//
+// exactly, for any subtotals and any roundness G. It falls straight out
+// of `allocate`'s conservation: tax shares sum to tax, tip shares to tip,
+// and the per-person sum is linear.
+// ════════════════════════════════════════════════════════════════
+export function billTotals(subtotals: number[], tax: number, tip: number, G: number): number[] {
+  //@ requires subtotals.length >= 1
+  //@ requires forall(k, 0 <= k && k < subtotals.length ==> subtotals[k] >= 0)
+  //@ requires sumTo(subtotals, subtotals.length) >= 1
+  //@ requires tax >= 0
+  //@ requires tip >= 0
+  //@ requires G >= 1
+  //@ ensures \result.length === subtotals.length
+  //@ ensures sumTo(\result, \result.length) === sumTo(subtotals, subtotals.length) + tax + tip
+  //@ type p nat
+
+  const n = subtotals.length;
+  // allocate's postconditions give: |taxShares| === n && Σ taxShares === tax
+  // (and likewise for tip) — proportional to subtotals, conserving.
+  const taxShares = allocate(tax, subtotals, G);
+  const tipShares = allocate(tip, subtotals, G);
+
+  let totals: number[] = [];
+  let p = 0;
+  while (p < n) {
+    //@ invariant 0 <= p && p <= n
+    //@ invariant totals.length === p
+    //@ invariant sumTo(totals, p) === sumTo(subtotals, p) + sumTo(taxShares, p) + sumTo(tipShares, p)
+    //@ decreases n - p
+    totals = [...totals, subtotals[p] + taxShares[p] + tipShares[p]];
+    p = p + 1;
+  }
+  return totals;
+}
+
+// Split one item's `price` across the people who CLAIMED it, scattered into an
+// n-person vector. `claimers[j]` is the person index that claim j belongs to and
+// `claimerWeights[j]` their weight (all 1 = an even split). We allocate over the
+// claimers only — so the leftover-cent redistribution can never touch someone
+// who didn't order the item (see FALSE_START.md §1) — then scatter the shares
+// home. CONSERVATION: every cent of `price` lands on a claimer.
+export function itemShare(price: number, claimers: number[], claimerWeights: number[], n: number, G: number): number[] {
+  //@ requires price >= 0
+  //@ requires n >= 1
+  //@ requires claimers.length >= 1
+  //@ requires claimers.length === claimerWeights.length
+  //@ requires forall(j, 0 <= j && j < claimers.length ==> 0 <= claimers[j] && claimers[j] < n)
+  //@ requires forall(j, 0 <= j && j < claimerWeights.length ==> claimerWeights[j] >= 0)
+  //@ requires sumTo(claimerWeights, claimerWeights.length) >= 1
+  //@ requires G >= 1
+  //@ ensures \result.length === n
+  //@ ensures sumTo(\result, n) === price
+  //@ ensures forall(q, 0 <= q && q < n && !claimers.includes(q) ==> \result[q] === 0)
+  //@ type p nat
+  //@ type j nat
+
+  const c = claimers.length;
+  // allocate gives: |shares| === c && Σ shares === price (over the claimers only)
+  const shares = allocate(price, claimerWeights, G);
+
+  // Everyone starts at 0 — non-claimers stay here.
+  let result: number[] = [];
+  let p = 0;
+  while (p < n) {
+    //@ invariant 0 <= p && p <= n
+    //@ invariant result.length === p
+    //@ invariant sumTo(result, p) === 0
+    //@ invariant forall(q, 0 <= q && q < p ==> result[q] === 0)
+    //@ decreases n - p
+    result = [...result, 0];
+    p = p + 1;
+  }
+
+  // Scatter: hand claim j's share home to person claimers[j]. A person not yet
+  // touched stays 0, so anyone never in `claimers` ends at 0.
+  let j = 0;
+  while (j < c) {
+    //@ invariant 0 <= j && j <= c
+    //@ invariant result.length === n
+    //@ invariant sumTo(result, n) === sumTo(shares, j)
+    //@ invariant forall(q, 0 <= q && q < n && forall(jp, 0 <= jp && jp < j ==> claimers[jp] !== q) ==> result[q] === 0)
+    //@ decreases c - j
+    result[claimers[j]] = result[claimers[j]] + shares[j];
+    j = j + 1;
+  }
+  return result;
+}
