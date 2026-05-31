@@ -287,3 +287,38 @@ export function bill(itemVectors: number[][], prices: number[], tax: number, tip
   const subtotals = itemSubtotals(itemVectors, prices, n);
   return billTotals(subtotals, tax, tip, G);
 }
+
+// ════════════════════════════════════════════════════════════════
+// Balances & settlement (Stage 2).
+//
+// Some people fronted money (paid the waiter); everyone owes their total.
+// A person's NET BALANCE is what they paid minus what they owe — positive
+// = owed money back, negative = still owes. The load-bearing fact:
+//
+//   Σ balances === 0   always   (it's a redistribution, not a faucet)
+//
+// — which holds exactly when the money paid in equals the money owed out
+// (the grand total). No money appears or disappears at the netting step.
+// ════════════════════════════════════════════════════════════════
+export function balances(paid: number[], owed: number[]): number[] {
+  //@ requires paid.length === owed.length
+  //@ requires sumTo(paid, paid.length) === sumTo(owed, owed.length)
+  //@ ensures \result.length === paid.length
+  //@ ensures forall(k, 0 <= k && k < \result.length ==> \result[k] === paid[k] - owed[k])
+  //@ ensures sumTo(\result, \result.length) === 0
+  //@ type p nat
+
+  const n = paid.length;
+  let result: number[] = [];
+  let p = 0;
+  while (p < n) {
+    //@ invariant 0 <= p && p <= n
+    //@ invariant result.length === p
+    //@ invariant forall(k, 0 <= k && k < p ==> result[k] === paid[k] - owed[k])
+    //@ invariant sumTo(result, p) === sumTo(paid, p) - sumTo(owed, p)
+    //@ decreases n - p
+    result = [...result, paid[p] - owed[p]];
+    p = p + 1;
+  }
+  return result;
+}

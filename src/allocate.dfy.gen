@@ -239,3 +239,27 @@ method bill(itemVectors: seq<seq<int>>, prices: seq<int>, tax: int, tip: int, n:
   var i_t5 := billTotals(subtotals, tax, tip, G);
   return i_t5;
 }
+
+method balances(paid: seq<int>, owed: seq<int>) returns (res: seq<int>)
+  requires (|paid| == |owed|)
+  requires (sumTo(paid, |paid|) == sumTo(owed, |owed|))
+  ensures (|res| == |paid|)
+  ensures forall k: int :: ((0 <= k) ==> (k < |res|) ==> (res[k] == (paid[k] - owed[k])))
+  ensures (sumTo(res, |res|) == 0)
+{
+  var n := |paid|;
+  var result: seq<int> := [];
+  var p := 0;
+  while (p < n)
+    invariant (0 <= p)
+    invariant (p <= n)
+    invariant (|result| == p)
+    invariant forall k: int :: ((0 <= k) ==> (k < p) ==> (result[k] == (paid[k] - owed[k])))
+    invariant (sumTo(result, p) == (sumTo(paid, p) - sumTo(owed, p)))
+    decreases (n - p)
+  {
+    result := (result + [(paid[p] - owed[p])]);
+    p := (p + 1);
+  }
+  return result;
+}
