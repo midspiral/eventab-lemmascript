@@ -542,7 +542,7 @@ export default function App() {
           {ROUNDNESS.find((x) => x.g === G)?.label} · no account, no server — your tab stays in this
           browser (and in the share link).
         </p>
-        <p className="muted">
+        <p className="muted credits">
           <a href="https://github.com/midspiral/LemmaScript" target="_blank" rel="noreferrer">
             Verified with LemmaScript
           </a>{" "}
