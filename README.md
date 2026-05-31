@@ -164,3 +164,34 @@ src/*.dfy              generated + hand-written lemmas (sumTo, deficit bound, ca
 src/allocateNaive.ts   v0 counterexample (EXPECTED TO FAIL) — the vanished cent
 FALSE_START.md         reject→fix log: encodings that conserved but were still wrong
 ```
+
+## The app — a single-file verified bill-splitter
+
+`ui/` is a React + Vite app that runs the verified core directly in the browser and
+bundles to ONE self-contained `index.html` (works on GitHub Pages and over `file://`).
+Build it with `cd ui && npm ci && npm run build` → `ui/dist/index.html`.
+
+The shell is **untrusted**: it only ever calls the proven ops with inputs that satisfy
+their preconditions, and it *gates* on those preconditions rather than calling out of
+contract —
+
+- `bill` runs only once there is at least one priced, claimed item (`Σ prices ≥ 1`);
+- `balances` / `settle` run only once the tab is fully paid (`Σ paid === grand`), so the
+  `Σ balances === 0` guarantee is always in-contract — until then the UI shows what is
+  still owed instead of a settlement.
+
+Every figure on screen — per-person shares, the tax/tip split, the star settlement —
+comes from `src/allocate.ts`. The verified rounding is on display: switch *round shares*
+to $1 or $5 and the per-line shares snap to the unit while the total still sums to the
+exact tab (conservation holds for every `G`, with one share absorbing the sub-`G`
+remainder). State persists to `localStorage` and to a shareable URL hash; no account,
+no server.
+
+Browser-tested headless (Playwright + chromium) against the live `dist/index.html`:
+17/17 assertions — values, the conservation/settlement badges, the rounding demo, and
+the precondition gate.
+
+### Deploy
+
+`.github/workflows/deploy.yml` builds `ui/` and publishes `ui/dist` to GitHub Pages on
+push to `main` (enable Pages → "GitHub Actions" in the repo settings).
