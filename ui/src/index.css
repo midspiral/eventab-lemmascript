@@ -381,6 +381,9 @@ footer {
 footer b {
   color: var(--ink);
 }
+footer a {
+  color: var(--accent);
+}
 .muted {
   color: var(--muted);
 }

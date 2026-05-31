@@ -540,7 +540,14 @@ export default function App() {
         <p className="muted">
           EvenTab · {n} {n === 1 ? "person" : "people"} · payments rounded to{" "}
           {ROUNDNESS.find((x) => x.g === G)?.label} · no account, no server — your tab stays in this
-          browser (and in the share link).
+          browser (and in the share link). ·{" "}
+          <a href="https://github.com/midspiral/LemmaScript" target="_blank" rel="noreferrer">
+            Verified with LemmaScript
+          </a>{" "}
+          ·{" "}
+          <a href="https://github.com/midspiral/eventab-lemmascript" target="_blank" rel="noreferrer">
+            Source
+          </a>
         </p>
       </footer>
     </div>
