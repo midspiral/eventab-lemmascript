@@ -37,7 +37,7 @@ just **cite small, named lemmas**. Two techniques keep it fast *and* honest:
 - The arithmetic cancellations go through the Dafny standard library.
 
 ```
-check.sh dafny   →   floorShare: 4 verified · allocate.ts: 27 verified · 0 errors  (~7s)
+check.sh dafny   →   floorShare: 4 verified · allocate.ts: 31 verified · 0 errors  (~7s)
 ```
 (`allocate.ts` now holds the kernel **and** the Stage 1 bill model below.)
 
@@ -78,6 +78,22 @@ Each step just composes the one below it through its `ensures` — no step
 re-derives conservation, it inherits it. That inheritance *is* the lesson: prove
 the leaf once, and the whole tree is sound.
 
+## Stage 2 — balances & settlement
+
+Once everyone has a total, who actually pays whom:
+
+> **`balances`** — net what each person paid against what they owe. Proven:
+> `Σ balances === 0` (a redistribution, not a faucet — no money appears at the
+> netting step).
+>
+> **`settle`** — the payments that square everyone up, routed through one **hub**.
+> Proven: every person ends square (`net[p] === balances[p]`) **and** the books
+> still sum to zero (`Σ net === 0`). The neat part: because `Σ balances === 0`,
+> the hub's leftover is *exactly* its own balance — so it settles with no special
+> transfer. Valid and conserving; routing through one hub isn't *minimal* (that's
+> NP-hard, DESIGN §5), so the shell can swap in a fancier matcher later — the
+> *theorem* it must satisfy is the one proved here.
+
 ## The teaching contrast (v0 → v1)
 
 `src/allocateNaive.ts` is the version you write first — floor each share, ship
@@ -109,18 +125,19 @@ npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocateNaive.
 
 ## What's next
 
-- **Stage 2 — balances & settlement** (DESIGN §5) — net what each person paid
-  against what they owe (`Σ balances === 0`), then `settle()` → a list of
-  transfers that drive every balance to 0 and invent no money.
-- **Stages 3–4** (DESIGN §7) — the ephemeral op-log (every reachable tab
-  conserves) and the receipt export.
+- **Stage 3 — the ephemeral op-log** (DESIGN §6) — claims/payments as an
+  append-only log; **every reachable tab conserves** (the money invariants hold
+  over any replay), which is what makes the live multi-device sync safe.
+- **Stage 4** — receipt export (DESIGN §7), and wrapping the verified core in a
+  thin UI + the Cloudflare Durable Object backend.
 
 ## Layout
 
 ```
 src/floorShare.ts      VERIFIED — the G-floor + its bracketing bounds (the only div proof).
 src/allocate.ts        VERIFIED core — kernel (allocate, roundness G) + Stage 1 bill model
-                       (itemShare, itemSubtotals, billTotals, bill). No floats, no I/O.
+                       (itemShare, itemSubtotals, billTotals, bill) + Stage 2
+                       (balances, settle). No floats, no I/O.
 src/*.dfy              generated + hand-written lemmas (sumTo, deficit bound, cancellation)
 src/allocateNaive.ts   v0 counterexample (EXPECTED TO FAIL) — the vanished cent
 FALSE_START.md         reject→fix log: encodings that conserved but were still wrong

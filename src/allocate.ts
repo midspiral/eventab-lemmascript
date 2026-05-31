@@ -322,3 +322,45 @@ export function balances(paid: number[], owed: number[]): number[] {
   }
   return result;
 }
+
+// settle(balances): the payments that square everyone up, routed through a HUB
+// (the last person). For each other person p there is one transfer with the
+// hub of `balances[p]` — positive = the hub pays p (p was a creditor), negative
+// = p pays the hub (p was a debtor). The hub takes whatever is left over; and
+// because `Σ balances === 0`, that residual is *exactly* the hub's own balance,
+// so the hub squares too with no separate transfer. Two proven facts:
+//
+//   net[p] === balances[p]  for every p   (everyone ends square)
+//   Σ net === 0                            (settlement invents no money)
+//
+// `net[p]` is person p's net cash with the hub; a shell renders it as
+// "p pays hub $X" / "hub pays p $X". Routing through one hub is valid and
+// conserving but not minimal — minimality is NP-hard (DESIGN §5).
+export function settle(balances: number[]): number[] {
+  //@ requires balances.length >= 1
+  //@ requires sumTo(balances, balances.length) === 0
+  //@ ensures \result.length === balances.length
+  //@ ensures forall(k, 0 <= k && k < \result.length ==> \result[k] === balances[k])
+  //@ ensures sumTo(\result, \result.length) === 0
+  //@ type p nat
+
+  const n = balances.length;
+  let net: number[] = [];
+  let hubNet = 0;
+  let p = 0;
+  while (p < n - 1) {
+    //@ invariant 0 <= p && p <= n - 1
+    //@ invariant net.length === p
+    //@ invariant forall(k, 0 <= k && k < p ==> net[k] === balances[k])
+    //@ invariant sumTo(net, p) === sumTo(balances, p)
+    //@ invariant hubNet === 0 - sumTo(balances, p)
+    //@ decreases (n - 1) - p
+    net = [...net, balances[p]];
+    hubNet = hubNet - balances[p];
+    p = p + 1;
+  }
+  // The hub (person n-1) takes the residual `hubNet`, which Σ === 0 pins to be
+  // exactly `balances[n-1]` — so `net === balances` and the books still sum to 0.
+  net = [...net, hubNet];
+  return net;
+}

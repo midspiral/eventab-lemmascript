@@ -394,3 +394,35 @@ method balances(paid: seq<int>, owed: seq<int>) returns (res: seq<int>)
   }
   return result;
 }
+
+method settle(balances: seq<int>) returns (res: seq<int>)
+  requires (|balances| >= 1)
+  requires (sumTo(balances, |balances|) == 0)
+  ensures (|res| == |balances|)
+  ensures forall k: int :: ((0 <= k) ==> (k < |res|) ==> (res[k] == balances[k]))
+  ensures (sumTo(res, |res|) == 0)
+{
+  var n := |balances|;
+  var net: seq<int> := [];
+  var hubNet := 0;
+  var p := 0;
+  while (p < (n - 1))
+    invariant (0 <= p)
+    invariant (p <= (n - 1))
+    invariant (|net| == p)
+    invariant forall k: int :: ((0 <= k) ==> (k < p) ==> (net[k] == balances[k]))
+    invariant (sumTo(net, p) == sumTo(balances, p))
+    invariant (hubNet == (0 - sumTo(balances, p)))
+    decreases ((n - 1) - p)
+  {
+    SumToExtend(net, balances[p], p);
+    net := (net + [balances[p]]);
+    hubNet := (hubNet - balances[p]);
+    p := (p + 1);
+  }
+  // hubNet == -sumTo(balances, n-1); Σ balances == 0 unfolds to make it == balances[n-1].
+  SumToExtend(net, hubNet, n - 1);
+  assert sumTo(balances, n) == sumTo(balances, n - 1) + balances[n - 1];
+  net := (net + [hubNet]);
+  return net;
+}
