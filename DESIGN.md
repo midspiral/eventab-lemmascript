@@ -150,27 +150,26 @@ arithmetic kernel that composes.
 ## 5. Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────────────┐
 │  React + Vite single-file SPA  (UNVERIFIED shell — ui/src/App.tsx)     │
-│   • people / items / claims / tax / tip / who-paid / rounding inputs    │
-│   • imports the verified core directly; runs it in the browser          │
-│   • compute() GATES every core call on its precondition (see below)     │
-│   • localStorage + URL-hash share link  (no account, no server)         │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ direct function calls (same module
-                                    │ that the proofs are about)
-    ╔═══════════════════════════════▼════════════════════════════════════╗
-    ║  VERIFIED money core  —  src/floorShare.ts + src/allocate.ts         ║
-    ║  (Dafny: 4 + 39 verified, 0 errors. Integer cents. No floats, no I/O)║
-    ║                                                                     ║
-    ║   floorShareG  ........ G-floor + bracketing bounds (the only div)   ║
-    ║   allocate  ........... largest-remainder: conservation + fairness   ║
-    ║   itemShare / vectorAdd / itemSubtotals / billTotals / bill          ║
-    ║                          the bill, leaves → grand total              ║
-    ║   balances / settle / settleRounded / roundToG                       ║
-    ║                          zero-sum balances + star settlement         ║
-    ║   applyOp / replay  ... op-log: Σ === 0 over any replay              ║
-    ╚═════════════════════════════════════════════════════════════════════╝
+│   • people / items / claims / tax / tip / who-paid / rounding inputs   │
+│   • imports the verified core directly; runs it in the browser         │
+│   • compute() GATES every core call on its precondition (see below)    │
+│   • localStorage + URL-hash share link  (no account, no server)        │
+└────────────────────────────────┬───────────────────────────────────────┘
+                                 │ direct function calls (same module
+                                 │ that the proofs are about)
+ ╔═══════════════════════════════▼══════════════════════════════════════╗
+ ║  VERIFIED money core  —  src/floorShare.ts + src/allocate.ts         ║
+ ║  (Dafny: 4 + 39 verified, 0 errors. Integer cents. No floats, no I/O)║   ║                                                                      ║
+ ║   floorShareG  ........ G-floor + bracketing bounds (the only div)   ║
+ ║   allocate  ........... largest-remainder: conservation + fairness   ║
+ ║   itemShare / vectorAdd / itemSubtotals / billTotals / bill          ║
+ ║                          the bill, leaves → grand total              ║
+ ║   balances / settle / settleRounded / roundToG                       ║
+ ║                          zero-sum balances + star settlement         ║
+ ║   applyOp / replay  ... op-log: Σ === 0 over any replay              ║
+ ╚══════════════════════════════════════════════════════════════════════╝
 ```
 
 **Where the core runs.** The same `src/allocate.ts` the proofs are about is
