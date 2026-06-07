@@ -161,7 +161,7 @@ arithmetic kernel that composes.
                                  │ that the proofs are about)
  ╔═══════════════════════════════▼══════════════════════════════════════╗
  ║  VERIFIED money core  —  src/floorShare.ts + src/allocate.ts         ║
- ║  (Dafny: 4 + 39 verified, 0 errors. Integer cents. No floats, no I/O)║   ║                                                                      ║
+ ║  (Dafny: 4 + 39 verified, 0 errors. Integer cents. No floats, no I/O)║
  ║   floorShareG  ........ G-floor + bracketing bounds (the only div)   ║
  ║   allocate  ........... largest-remainder: conservation + fairness   ║
  ║   itemShare / vectorAdd / itemSubtotals / billTotals / bill          ║
