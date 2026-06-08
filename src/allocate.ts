@@ -28,6 +28,8 @@ import { floorShareG } from "./floorShare";
 // integer floor is `Math.floor(...)` → JS-faithful `JSFloorDiv`.)
 // ════════════════════════════════════════════════════════════════
 
+// sumTo(arr, n) -> the sum of the first n entries: arr[0] + … + arr[n-1]. This is
+// the specs' "Σ" — every conservation `ensures` is written with it.
 export function sumTo(arr: number[], n: number): number {
   //@ requires 0 <= n && n <= arr.length
   //@ decreases n
@@ -35,6 +37,15 @@ export function sumTo(arr: number[], n: number): number {
   return sumTo(arr, n - 1) + arr[n - 1];
 }
 
+// ── allocate(total, weights, G) -> shares ────────────────────────────
+//   In   total       cents to hand out                          (≥ 0)
+//        weights[k]  slot k's relative weight; [1,1,1] = even    (≥ 0, Σ ≥ 1)
+//        G           roundness unit in cents (1 = ¢, 100 = $1)   (≥ 1)
+//   Out  shares      same length as weights; shares[k] = cents given to slot k
+//   Proven  Σ shares === total                          (conservation, exact)
+//           floorShareG(k) ≤ shares[k] ≤ floorShareG(k) + G      (fair to within G)
+//   NB   a "slot" has no fixed meaning — the caller decides what position k is
+//        (a person in billTotals, a claim in itemShare).
 export function allocate(total: number, weights: number[], G: number): number[] {
   //@ requires total >= 0
   //@ requires weights.length >= 1
@@ -108,6 +119,11 @@ export function allocate(total: number, weights: number[], G: number): number[] 
 // of `allocate`'s conservation: tax shares sum to tax, tip shares to tip,
 // and the per-person sum is linear.
 // ════════════════════════════════════════════════════════════════
+//   In   subtotals[k]  person k's food subtotal in cents         (≥ 0, Σ ≥ 1)
+//        tax, tip      whole-bill tax and tip in cents            (≥ 0)
+//        G             roundness (the app passes 1 → exact cents)
+//   Out  totals[k]     person k's grand total = subtotal + tax-share + tip-share
+//   Proven  Σ totals === Σ subtotals + tax + tip
 export function billTotals(subtotals: number[], tax: number, tip: number, G: number): number[] {
   //@ requires subtotals.length >= 1
   //@ requires forall(k, 0 <= k && k < subtotals.length ==> subtotals[k] >= 0)
@@ -144,6 +160,15 @@ export function billTotals(subtotals: number[], tax: number, tip: number, G: num
 // claimers only — so the leftover-cent redistribution can never touch someone
 // who didn't order the item (see FALSE_START.md §1) — then scatter the shares
 // home. CONSERVATION: every cent of `price` lands on a claimer.
+//   In   price              this item's price in cents                  (≥ 0)
+//        claimers[j]        the PERSON index that claim j belongs to     (0 ≤ . < n)
+//        claimerWeights[j]  claim j's weight; [1,1,…] = even split        (≥ 0, Σ ≥ 1)
+//        n                  number of people at the table                (≥ 1)
+//        G                  roundness (the app passes 1 → exact cents)
+//   Out  an n-PERSON vector: [q] = cents of this item that person q owes.
+//        (claimers/claimerWeights/shares are indexed by CLAIM, not person; the
+//        shares are split among claims, then SCATTERED home to people q.)
+//   Proven  Σ === price   AND   every non-claimer q gets exactly 0
 export function itemShare(price: number, claimers: number[], claimerWeights: number[], n: number, G: number): number[] {
   //@ requires price >= 0
   //@ requires n >= 1
@@ -194,6 +219,8 @@ export function itemShare(price: number, claimers: number[], claimerWeights: num
 // Element-wise sum of two equal-length vectors. The sum of the result is the
 // sum of the parts — the linearity that lets per-person subtotals accumulate
 // across items without losing a cent.
+//   In   a, b   two equal-length cent vectors
+//   Out  [k] = a[k] + b[k]   (and Σ result === Σ a + Σ b)
 export function vectorAdd(a: number[], b: number[]): number[] {
   //@ requires a.length === b.length
   //@ ensures \result.length === a.length
@@ -221,6 +248,11 @@ export function vectorAdd(a: number[], b: number[]): number[] {
 // `itemShare`). The composed theorem — the sum-swap — is that nothing leaks in
 // the roll-up: Σ subtotals === Σ item prices, for any claim pattern. Proven by
 // accumulation: the running Σ subtotals equals the running Σ prices, item by item.
+//   In   itemVectors[i]  item i's n-person share vector (Σ === prices[i], entries ≥ 0)
+//        prices[i]       item i's price in cents
+//        n               number of people                             (≥ 1)
+//   Out  an n-person vector: [k] = person k's subtotal summed over all items
+//   Proven  Σ subtotals === Σ prices   (nothing leaks in the roll-up)
 export function itemSubtotals(itemVectors: number[][], prices: number[], n: number): number[] {
   //@ requires n >= 1
   //@ requires itemVectors.length === prices.length
@@ -271,6 +303,13 @@ export function itemSubtotals(itemVectors: number[][], prices: number[], n: numb
 // by hand on a $237.46 five-way split with 18% tip — proven, end to end, by
 // composing `itemSubtotals` (Σ subtotals === Σ prices) with `billTotals`
 // (Σ totals === Σ subtotals + tax + tip).
+//   In   itemVectors[i]  item i's n-person share vector (from itemShare; Σ === prices[i])
+//        prices[i]       item i's price in cents                      (Σ prices ≥ 1)
+//        tax, tip        whole-bill tax / tip in cents                (≥ 0)
+//        n               number of people                             (≥ 1)
+//        G               roundness (the app passes 1)
+//   Out  totals[k]       person k's grand total owed
+//   Proven  Σ totals === Σ prices + tax + tip   (the grand total)
 export function bill(itemVectors: number[][], prices: number[], tax: number, tip: number, n: number, G: number): number[] {
   //@ requires n >= 1
   //@ requires itemVectors.length === prices.length
@@ -300,6 +339,10 @@ export function bill(itemVectors: number[][], prices: number[], tax: number, tip
 // — which holds exactly when the money paid in equals the money owed out
 // (the grand total). No money appears or disappears at the netting step.
 // ════════════════════════════════════════════════════════════════
+//   In   paid[k]   cents person k actually paid
+//        owed[k]   cents person k owes (the `totals` from bill); requires Σ paid === Σ owed
+//   Out  [k] = paid[k] − owed[k]   (+ = owed money back, − = still owes)
+//   Proven  Σ balances === 0   (a redistribution — no money created at netting)
 export function balances(paid: number[], owed: number[]): number[] {
   //@ requires paid.length === owed.length
   //@ requires sumTo(paid, paid.length) === sumTo(owed, owed.length)
@@ -350,6 +393,10 @@ export function balances(paid: number[], owed: number[]): number[] {
 // `net[p]` is person p's net cash with the hub; a shell renders it as
 // "p pays hub $X" / "hub pays p $X". Routing through one hub is valid and
 // conserving but not minimal — minimality is NP-hard (DESIGN §5).
+//   In   balances[k]  net per person (from `balances`); requires Σ === 0
+//   Out  net[k]       person k's single transfer with the hub (the last person):
+//                     − = k pays the hub, + = hub pays k
+//   Proven  net[k] === balances[k] (everyone squares)   AND   Σ net === 0
 export function settle(balances: number[]): number[] {
   //@ requires balances.length >= 1
   //@ requires sumTo(balances, balances.length) === 0
@@ -382,6 +429,8 @@ export function settle(balances: number[]): number[] {
 // Round x to the nearest whole multiple of G (ties up). Pulled out as a named
 // function so the settlement *contract* can name the amount each non-payer owes
 // (see settleRounded's `ensures`), rather than only promising the books balance.
+//   In   x : an amount in cents (may be negative)     G : unit in cents (≥ 1)
+//   Out  x rounded to the nearest whole multiple of G (ties round up)
 export function roundToG(x: number, G: number): number {
   //@ requires G >= 1
   return G * Math.floor((x + Math.floor(G / 2)) / G);
@@ -401,6 +450,11 @@ export function roundToG(x: number, G: number): number {
 // Together they force net[hub] === −Σ(rounded non-hub transfers): the hub/payer absorbs the
 // rounding. At G === 1, roundToG is the identity, so net === balances — exactly like `settle`.
 // (Without the first `ensures`, the spec was vacuous: all-zeros also conserves.)
+//   In   balances[k]  net per person          G : transfer roundness in cents (≥ 1)
+//        hub          the payer who absorbs the rounding    (0 ≤ hub < |balances|)
+//   Out  net[k]       k's rounded transfer with the hub; the hub takes the leftover
+//   Proven  net[k] === roundToG(balances[k], G) for every k ≠ hub   AND   Σ net === 0
+//           (at G = 1 this is exactly `settle`)
 export function settleRounded(balances: number[], hub: number, G: number): number[] {
   //@ requires balances.length >= 1
   //@ requires 0 <= hub && hub < balances.length
@@ -452,6 +506,11 @@ export function settleRounded(balances: number[], hub: number, G: number): numbe
 
 // One edit: move `amount` from account `from` to account `to`. Balanced, so it
 // preserves the running total exactly — the invariant-preservation step.
+//   In   bal              the running per-account balance vector
+//        from, to         account indices to move between        (0 ≤ . < |bal|)
+//        amount           cents to move from `from` to `to`
+//   Out  bal with `amount` moved from→to
+//   Proven  Σ unchanged   (a balanced ledger move)
 export function applyOp(bal: number[], from: number, to: number, amount: number): number[] {
   //@ requires 0 <= from && from < bal.length
   //@ requires 0 <= to && to < bal.length
@@ -466,6 +525,11 @@ export function applyOp(bal: number[], from: number, to: number, amount: number)
 
 // Replay an append-only log over an empty tab. However many edits, in whatever
 // order the devices produced them, the books still balance: Σ === 0.
+//   In   froms[k], tos[k]  the k-th edit's source / dest account   (0 ≤ . < n)
+//        amounts[k]        the k-th edit's cents
+//        n                 number of accounts / people             (≥ 1)
+//   Out  the final n-account balance after applying every edit in order
+//   Proven  Σ === 0   for any log, in any order
 export function replay(froms: number[], tos: number[], amounts: number[], n: number): number[] {
   //@ requires n >= 1
   //@ requires froms.length === tos.length
