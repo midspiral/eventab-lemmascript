@@ -45,6 +45,61 @@ Keep a scratch idea in your head of the four kinds of vector that show up:
 `allocate` lives entirely in that last row: it is *agnostic*. Whoever calls it
 gets to say what a slot is.
 
+### Every variable, up front
+
+Here is every parameter and key local that appears in the core. **Every `number`
+is an integer** — either cents, a count, a roundness unit, or an index. There are
+no floats. Read the "an entry `[k]` is" column together with the index-space table
+above.
+
+**Scalars (a single integer):**
+
+| variable        | type     | what it is                                                       |
+|-----------------|----------|------------------------------------------------------------------|
+| `total`         | `number` | a pot of cents to hand out (e.g. a tax or tip amount)            |
+| `price`         | `number` | one line item's price, in cents (`$24.00` → `2400`)             |
+| `tax`, `tip`    | `number` | the tax / tip on the whole bill, in cents                        |
+| `G`             | `number` | roundness unit in cents: `1` = exact cents, `100` = $1, `500` = $5 |
+| `n`             | `number` | how many people are at the table                                 |
+| `W`             | `number` | `Σ weights` — total weight (a local inside `allocate`)           |
+| `hub`           | `number` | the person index who fronted the bill / absorbs rounding         |
+| `from`, `to`    | `number` | account (person) indices for one op-log edit                     |
+| `amount`        | `number` | cents moved by one op-log edit                                   |
+
+**Vectors (`number[]` — an array of integer cents or indices):**
+
+| variable             | type       | index space   | an entry `[k]` is…                                         |
+|----------------------|------------|---------------|------------------------------------------------------------|
+| `weights`            | `number[]` | abstract/slot | slot `k`'s relative weight (`[1,1,1]` = even)              |
+| `result`             | `number[]` | abstract/slot | cents handed to slot `k` (`allocate`'s return)            |
+| `prices`             | `number[]` | item          | price of item `k`, in cents                               |
+| `claimers`           | `number[]` | claim         | the **person index** that claim `k` belongs to            |
+| `claimerWeights`     | `number[]` | claim         | weight of claim `k` (`[1,1]` = even split among claimers) |
+| `shares`             | `number[]` | claim         | cents for claim `k` (a local inside `itemShare`)          |
+| `subtotals`          | `number[]` | person        | person `k`'s food subtotal, in cents                      |
+| `taxShares`, `tipShares` | `number[]` | person    | person `k`'s share of the tax / tip                       |
+| `totals` / `owed`    | `number[]` | person        | person `k`'s grand total owed (subtotal + tax + tip)      |
+| `paid`               | `number[]` | person        | cents person `k` actually paid                            |
+| `balances`           | `number[]` | person        | `paid[k] − owed[k]` (+ = owed back, − = still owes)        |
+| `net`                | `number[]` | person        | person `k`'s settlement transfer with the hub             |
+| `froms`, `tos`       | `number[]` | op-log        | account index of the `k`-th edit                          |
+| `amounts`            | `number[]` | op-log        | cents moved by the `k`-th edit                            |
+
+**The one 2-D array:**
+
+| variable      | type         | index space      | what entries mean                                                  |
+|---------------|--------------|------------------|--------------------------------------------------------------------|
+| `itemVectors` | `number[][]` | item × person    | `itemVectors[i]` = item `i`'s share vector (length `n`); `itemVectors[i][k]` = cents of item `i` that person `k` owes |
+
+**One spec helper** (used only inside `//@` annotations, not real code):
+`sumTo(arr, n): number` = the sum of the first `n` entries of `arr`. Read
+`sumTo(x, x.length)` as "Σ x" — it's how the proofs say "the cents add up."
+
+> The two things people trip on: `claimers` / `claimerWeights` / `shares` are
+> indexed by **claim**, not person (slot `k` is the `k`-th claim on an item, and
+> `claimers[k]` tells you *which* person that claim belongs to); and `itemVectors`
+> is the only 2-D array — a grid of items (rows) × people (columns).
+
 ---
 
 ## 1. What "verified" means here
