@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 // its own `//@ requires` and throws PreconditionError if this (untrusted) shell
 // ever calls out of contract. `can.*` runs the same checks as booleans, used
 // below only to decide what to render — not to re-state the preconditions.
-import { itemShare, bill, balances, settleRounded, can } from "../../src/allocate.guarded";
+import { itemShare, bill, balances, settleRounded, can, PreconditionError } from "../../src/allocate.guarded";
 
 // Rounding is applied to the SETTLEMENT only — each non-payer's transfer is
 // rounded to a whole multiple of G and the payer (hub) absorbs the difference.
@@ -107,6 +107,7 @@ type Result = {
   net: number[]; // rounded settlement (hub absorbs); valid only when fullyPaid
   grand: number;
   paidTotal: number;
+  error: { fn: string; clauseId: string; clause: string } | null; // a blocked out-of-contract call (shell bug)
 };
 
 function compute(s: State): Result {
@@ -121,29 +122,35 @@ function compute(s: State): Result {
   const tax = cents(s.tax);
   const tip = cents(s.tip);
   const grand = sum(prices) + tax + tip;
-
-  // Shares are split to the EXACT cent (G = 1); rounding happens only at settlement,
-  // so even splits stay even. `can.bill` gates the render — the guarded `bill`
-  // itself would throw if this shell ever called it out of contract.
-  const itemVectors = usable.map((it) =>
-    itemShare(it.price, it.claimers, it.claimers.map(() => 1), n, 1),
-  );
-  const hasItems = can.bill(itemVectors, prices, tax, tip, n, 1);
-  const totals = hasItems ? bill(itemVectors, prices, tax, tip, n, 1) : zeros;
-
   const paidV = s.paid.map(cents);
   const paidTotal = sum(paidV);
 
-  // Settlement is in-contract only once the tab is fully paid (Σ paid === Σ owed).
-  const fullyPaid = hasItems && can.balances(paidV, totals);
-  let bal = zeros;
-  let net = zeros;
-  if (fullyPaid) {
-    bal = balances(paidV, totals);
-    net = settleRounded(bal, s.hub, s.G); // Σ net === 0
-  }
+  // The `can.*` gates keep every call in-contract, so this catch is a pure backstop:
+  // if a shell bug ever reached the verified core out of contract, we show NOTHING
+  // rather than a wrong number — a violation can never surface as a trusted split.
+  try {
+    // Shares split to the EXACT cent (G = 1); rounding happens only at settlement.
+    const itemVectors = usable.map((it) =>
+      itemShare(it.price, it.claimers, it.claimers.map(() => 1), n, 1),
+    );
+    const hasItems = can.bill(itemVectors, prices, tax, tip, n, 1);
+    const totals = hasItems ? bill(itemVectors, prices, tax, tip, n, 1) : zeros;
 
-  return { hasItems, fullyPaid, totals, bal, net, grand, paidTotal };
+    // Settlement is in-contract only once the tab is fully paid (Σ paid === Σ owed).
+    const fullyPaid = hasItems && can.balances(paidV, totals);
+    let bal = zeros;
+    let net = zeros;
+    if (fullyPaid) {
+      bal = balances(paidV, totals);
+      net = settleRounded(bal, s.hub, s.G); // Σ net === 0
+    }
+    return { hasItems, fullyPaid, totals, bal, net, grand, paidTotal, error: null };
+  } catch (e) {
+    if (!(e instanceof PreconditionError)) throw e; // not ours — let it propagate
+    console.error(`[eventab] blocked out-of-contract call: ${e.fn} — ${e.clause}`, e.detail);
+    return { hasItems: false, fullyPaid: false, totals: zeros, bal: zeros, net: zeros, grand, paidTotal,
+      error: { fn: e.fn, clauseId: e.clauseId, clause: e.clause } };
+  }
 }
 
 // ── component ─────────────────────────────────────────────────────────
@@ -429,7 +436,13 @@ export default function App() {
           )}
         </div>
 
-        {!r.hasItems ? (
+        {r.error ? (
+          <p className="warn" data-testid="contract-error">
+            ⚠ This split couldn't be trusted. The app tried to call the verified core out of
+            contract (<code>{r.error.fn}</code>: {r.error.clause}) — so nothing is shown rather
+            than risk a wrong number, and the error has been logged.
+          </p>
+        ) : !r.hasItems ? (
           <p className="muted">Add an item with a price and at least one person to see the split.</p>
         ) : (
           <>
