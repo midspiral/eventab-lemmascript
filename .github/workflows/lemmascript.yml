@@ -48,11 +48,8 @@ jobs:
       - name: Build UI
         run: cd ui && npm run build
 
-      - name: Regenerate and verify Dafny
-        run: ../LemmaScript/tools/check.sh dafny
-
-      - name: Regenerate guarded drop-ins
-        run: ../LemmaScript/tools/check.sh guarded
+      - name: Regenerate and verify (Dafny + guarded)
+        run: ../LemmaScript/tools/check.sh dafny-guarded
 
       - name: Check generated files are up to date
         run: |
