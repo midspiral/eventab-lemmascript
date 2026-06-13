@@ -1,4 +1,5 @@
 //@ backend dafny
+//@ guarded
 
 import { floorShareG } from "./floorShare";
 

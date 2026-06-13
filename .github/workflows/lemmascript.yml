@@ -51,12 +51,15 @@ jobs:
       - name: Regenerate and verify Dafny
         run: ../LemmaScript/tools/check.sh dafny
 
+      - name: Regenerate guarded drop-ins
+        run: ../LemmaScript/tools/check.sh guarded
+
       - name: Check generated files are up to date
         run: |
-          git diff --exit-code -- '*.dfy.gen' '*.dfy'
-          untracked=$(git ls-files --others --exclude-standard -- '*.dfy.gen')
+          git diff --exit-code -- '*.dfy.gen' '*.dfy' '*.guarded.ts'
+          untracked=$(git ls-files --others --exclude-standard -- '*.dfy.gen' '*.guarded.ts')
           if [ -n "$untracked" ]; then
-            echo "ERROR: Untracked generated Dafny files:"
+            echo "ERROR: Untracked generated files:"
             echo "$untracked"
             exit 1
           fi
