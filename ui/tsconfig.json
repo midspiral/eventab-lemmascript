@@ -13,5 +13,5 @@
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "../src/allocate.ts", "../src/floorShare.ts"]
+  "include": ["src", "../src/allocate.ts", "../src/allocate.guarded.ts", "../src/floorShare.ts"]
 }

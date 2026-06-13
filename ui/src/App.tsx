@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-// The VERIFIED money core (Dafny-proven, integer cents). The shell is
-// UNTRUSTED: it may only CALL these proven ops with inputs that satisfy their
-// preconditions — every call below is gated (see `compute()`):
-//   • bill          requires Σ prices ≥ 1   (at least one priced, claimed item)
-//   • balances      requires Σ paid === Σ owed   (the tab is fully paid)
-//   • settleRounded requires 0 ≤ hub < n   and proves Σ net === 0
-import { itemShare, bill, balances, settleRounded } from "../../src/allocate";
+// The VERIFIED money core, imported through its GUARDED drop-in: each op checks
+// its own `//@ requires` and throws PreconditionError if this (untrusted) shell
+// ever calls out of contract. `can.*` runs the same checks as booleans, used
+// below only to decide what to render — not to re-state the preconditions.
+import { itemShare, bill, balances, settleRounded, can } from "../../src/allocate.guarded";
 
 // Rounding is applied to the SETTLEMENT only — each non-payer's transfer is
 // rounded to a whole multiple of G and the payer (hub) absorbs the difference.
@@ -100,10 +98,10 @@ function loadState(): State {
   return demoState();
 }
 
-// ── the verified computation (mirrors src/demo.ts, with guards) ───────
+// ── the verified computation (through the guarded core) ───────
 type Result = {
-  hasItems: boolean; // Σ prices ≥ 1 — bill's precondition holds
-  fullyPaid: boolean; // Σ paid === grand — balances' precondition holds
+  hasItems: boolean; // can.bill — there's something to split
+  fullyPaid: boolean; // can.balances — the tab is fully paid
   totals: number[]; // per-person OWES, exact to the cent (from bill); zeros until hasItems
   bal: number[]; // exact balances; valid only when fullyPaid
   net: number[]; // rounded settlement (hub absorbs); valid only when fullyPaid
@@ -124,28 +122,25 @@ function compute(s: State): Result {
   const tip = cents(s.tip);
   const grand = sum(prices) + tax + tip;
 
-  // GUARD: bill requires n ≥ 1 and Σ prices ≥ 1. Shares are split to the EXACT
-  // cent (G = 1) — rounding happens only at settlement, so even splits stay even.
-  const hasItems = n >= 1 && sum(prices) >= 1;
-  let totals = zeros;
-  if (hasItems) {
-    const itemVectors = usable.map((it) =>
-      itemShare(it.price, it.claimers, it.claimers.map(() => 1), n, 1),
-    );
-    totals = bill(itemVectors, prices, tax, tip, n, 1);
-  }
+  // Shares are split to the EXACT cent (G = 1); rounding happens only at settlement,
+  // so even splits stay even. `can.bill` gates the render — the guarded `bill`
+  // itself would throw if this shell ever called it out of contract.
+  const itemVectors = usable.map((it) =>
+    itemShare(it.price, it.claimers, it.claimers.map(() => 1), n, 1),
+  );
+  const hasItems = can.bill(itemVectors, prices, tax, tip, n, 1);
+  const totals = hasItems ? bill(itemVectors, prices, tax, tip, n, 1) : zeros;
 
   const paidV = s.paid.map(cents);
   const paidTotal = sum(paidV);
 
-  // GUARD: balances requires Σ paid === Σ owed (=== grand). Only then is the
-  // settlement (and its Σ === 0 guarantee) in-contract.
-  const fullyPaid = hasItems && paidTotal === grand;
+  // Settlement is in-contract only once the tab is fully paid (Σ paid === Σ owed).
+  const fullyPaid = hasItems && can.balances(paidV, totals);
   let bal = zeros;
   let net = zeros;
   if (fullyPaid) {
-    bal = balances(paidV, totals); // Σ paid === Σ totals === grand ✓
-    net = settleRounded(bal, s.hub, s.G); // round transfers, hub absorbs; Σ net === 0 ✓
+    bal = balances(paidV, totals);
+    net = settleRounded(bal, s.hub, s.G); // Σ net === 0
   }
 
   return { hasItems, fullyPaid, totals, bal, net, grand, paidTotal };
