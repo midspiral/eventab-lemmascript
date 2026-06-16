@@ -47,6 +47,7 @@ export function sumTo(arr: number[], n: number): number {
 //   NB   a "slot" has no fixed meaning — the caller decides what position k is
 //        (a person in billTotals, a claim in itemShare).
 export function allocate(total: number, weights: number[], G: number): number[] {
+  //@ contract Splits total cents across the parties (one per weight) so the shares sum back to exactly total, and each share is within one roundness unit G of its fair share.
   //@ requires total >= 0
   //@ requires weights.length >= 1
   //@ requires forall(k, 0 <= k && k < weights.length ==> weights[k] >= 0)
@@ -125,6 +126,7 @@ export function allocate(total: number, weights: number[], G: number): number[] 
 //   Out  totals[k]     person k's grand total = subtotal + tax-share + tip-share
 //   Proven  Σ totals === Σ subtotals + tax + tip
 export function billTotals(subtotals: number[], tax: number, tip: number, G: number): number[] {
+  //@ contract The per-person totals sum to exactly the subtotals plus the tax and tip (conservation of the grand total).
   //@ requires subtotals.length >= 1
   //@ requires forall(k, 0 <= k && k < subtotals.length ==> subtotals[k] >= 0)
   //@ requires sumTo(subtotals, subtotals.length) >= 1
@@ -170,6 +172,7 @@ export function billTotals(subtotals: number[], tax: number, tip: number, G: num
 //        shares are split among claims, then SCATTERED home to people q.)
 //   Proven  Σ === price   AND   every non-claimer q gets exactly 0
 export function itemShare(price: number, claimers: number[], claimerWeights: number[], n: number, G: number): number[] {
+  //@ contract Splits one item's price across the people who claimed it, so the shares sum to exactly the price and anyone who did not claim it owes zero.
   //@ requires price >= 0
   //@ requires n >= 1
   //@ requires claimers.length >= 1
@@ -222,6 +225,7 @@ export function itemShare(price: number, claimers: number[], claimerWeights: num
 //   In   a, b   two equal-length cent vectors
 //   Out  [k] = a[k] + b[k]   (and Σ result === Σ a + Σ b)
 export function vectorAdd(a: number[], b: number[]): number[] {
+  //@ contract Adds two equal-length cent vectors element-wise; the result sums to the sum of the two inputs.
   //@ requires a.length === b.length
   //@ ensures \result.length === a.length
   //@ ensures forall(k, 0 <= k && k < \result.length ==> \result[k] === a[k] + b[k])
@@ -254,6 +258,7 @@ export function vectorAdd(a: number[], b: number[]): number[] {
 //   Out  an n-person vector: [k] = person k's subtotal summed over all items
 //   Proven  Σ subtotals === Σ prices   (nothing leaks in the roll-up)
 export function itemSubtotals(itemVectors: number[][], prices: number[], n: number): number[] {
+  //@ contract Rolls up each person's subtotal across all item vectors, so the subtotals sum to exactly the total of the item prices and stay non-negative.
   //@ requires n >= 1
   //@ requires itemVectors.length === prices.length
   //@ requires forall(i, 0 <= i && i < itemVectors.length ==> itemVectors[i].length === n)
@@ -311,6 +316,7 @@ export function itemSubtotals(itemVectors: number[][], prices: number[], n: numb
 //   Out  totals[k]       person k's grand total owed
 //   Proven  Σ totals === Σ prices + tax + tip   (the grand total)
 export function bill(itemVectors: number[][], prices: number[], tax: number, tip: number, n: number, G: number): number[] {
+  //@ contract Computes each person's grand total from the item vectors plus tax and tip, so the totals sum to exactly the item prices plus tax plus tip.
   //@ requires n >= 1
   //@ requires itemVectors.length === prices.length
   //@ requires forall(i, 0 <= i && i < itemVectors.length ==> itemVectors[i].length === n)
@@ -344,6 +350,7 @@ export function bill(itemVectors: number[][], prices: number[], tax: number, tip
 //   Out  [k] = paid[k] − owed[k]   (+ = owed money back, − = still owes)
 //   Proven  Σ balances === 0   (a redistribution — no money created at netting)
 export function balances(paid: number[], owed: number[]): number[] {
+  //@ contract Computes each person's net balance as what they paid minus what they owe; the balances sum to exactly zero.
   //@ requires paid.length === owed.length
   //@ requires sumTo(paid, paid.length) === sumTo(owed, owed.length)
   //@ ensures \result.length === paid.length
@@ -398,6 +405,7 @@ export function balances(paid: number[], owed: number[]): number[] {
 //                     − = k pays the hub, + = hub pays k
 //   Proven  net[k] === balances[k] (everyone squares)   AND   Σ net === 0
 export function settle(balances: number[]): number[] {
+  //@ contract Doesn't do anything useful, since it just returns the balances unchanged — the hub settlement it's named for is never captured by the spec (the app uses settleRounded instead).
   //@ requires balances.length >= 1
   //@ requires sumTo(balances, balances.length) === 0
   //@ ensures \result.length === balances.length
@@ -456,6 +464,7 @@ export function roundToG(x: number, G: number): number {
 //   Proven  net[k] === roundToG(balances[k], G) for every k ≠ hub   AND   Σ net === 0
 //           (at G = 1 this is exactly `settle`)
 export function settleRounded(balances: number[], hub: number, G: number): number[] {
+  //@ contract Routes settlement through the hub but rounds each non-hub transfer to a whole multiple of G (the hub absorbs the leftover); each non-hub transfer equals its rounded balance and the transfers sum to zero.
   //@ requires balances.length >= 1
   //@ requires 0 <= hub && hub < balances.length
   //@ requires G >= 1
@@ -512,6 +521,7 @@ export function settleRounded(balances: number[], hub: number, G: number): numbe
 //   Out  bal with `amount` moved from→to
 //   Proven  Σ unchanged   (a balanced ledger move)
 export function applyOp(bal: number[], from: number, to: number, amount: number): number[] {
+  //@ contract Preserves the total across all accounts — the running balance total is unchanged.
   //@ requires 0 <= from && from < bal.length
   //@ requires 0 <= to && to < bal.length
   //@ ensures \result.length === bal.length
@@ -531,6 +541,7 @@ export function applyOp(bal: number[], from: number, to: number, amount: number)
 //   Out  the final n-account balance after applying every edit in order
 //   Proven  Σ === 0   for any log, in any order
 export function replay(froms: number[], tos: number[], amounts: number[], n: number): number[] {
+  //@ contract Replays an append-only log of balanced ledger moves over an empty tab; whatever the edits and order, the final balances sum to zero.
   //@ requires n >= 1
   //@ requires froms.length === tos.length
   //@ requires tos.length === amounts.length

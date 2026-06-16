@@ -1,7 +1,7 @@
 // Runs the VERIFIED core on a concrete tab — a runtime sanity check, since a
 // proof is about the model, not the running bytes (floats, overflow, JS quirks).
 // `npx tsx src/demo.ts`
-import { itemShare, bill, balances, settle, replay } from "./allocate";
+import { itemShare, bill, balances, settleRounded, replay } from "./allocate";
 
 const fmt = (c: number) => `$${(c / 100).toFixed(2)}`;
 const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
@@ -35,7 +35,7 @@ console.log("\nBalances (paid − owed):");
 names.forEach((nm, i) => console.log(`  ${nm}: ${bal[i] >= 0 ? "+" : ""}${fmt(bal[i])}`));
 console.log(`  Σ balances = ${fmt(sum(bal))}  ${sum(bal) === 0 ? "✓" : "✗"}`);
 
-const net = settle(bal); // hub = last person (Cy)
+const net = settleRounded(bal, n - 1, G); // hub = last person (Cy); G=1 → exact, like the app
 console.log("\nSettlement (everyone squares with the hub, Cy):");
 net.forEach((amt, i) => {
   if (i === n - 1 || amt === 0) return;
