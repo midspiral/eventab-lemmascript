@@ -1,6 +1,6 @@
 # EvenTab — a verified group bill-splitter
 
-[![LemmaScript: verified](https://img.shields.io/badge/LemmaScript-verified-brightgreen)](https://github.com/midspiral/eventab-lemmascript/actions/workflows/lemmascript.yml)
+[![LemmaScript verified](https://img.shields.io/github/actions/workflow/status/midspiral/eventab-lemmascript/lemmascript.yml?branch=main&label=LemmaScript%20verified)](https://github.com/midspiral/eventab-lemmascript/actions/workflows/lemmascript.yml)
 
 
 > **Split the tab, even — provably to the cent.**
