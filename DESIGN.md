@@ -153,12 +153,16 @@ arithmetic kernel that composes.
 ┌────────────────────────────────────────────────────────────────────────┐
 │  React + Vite single-file SPA  (UNVERIFIED shell — ui/src/App.tsx)     │
 │   • people / items / claims / tax / tip / who-paid / rounding inputs   │
-│   • imports the verified core directly; runs it in the browser         │
-│   • compute() GATES every core call on its precondition (see below)    │
+│   • imports the generated runtime-contract boundary                    │
+│   • compute() uses can.* previews; guarded calls enforce independently │
 │   • localStorage + URL-hash share link  (no account, no server)        │
 └────────────────────────────────┬───────────────────────────────────────┘
-                                 │ direct function calls (same module
-                                 │ that the proofs are about)
+                                 │ guarded calls
+ ╔═══════════════════════════════▼══════════════════════════════════════╗
+ ║  RUNTIME CONTRACTS — src/allocate.guarded.ts                         ║
+ ║  generated from ordered `requires`; reject first, then delegate      ║
+ ╚═══════════════════════════════╤══════════════════════════════════════╝
+                                 │ accepted calls only
  ╔═══════════════════════════════▼══════════════════════════════════════╗
  ║  VERIFIED money core  —  src/floorShare.ts + src/allocate.ts         ║
  ║  (Dafny: 4 + 39 verified, 0 errors. Integer cents. No floats, no I/O)║
@@ -172,14 +176,15 @@ arithmetic kernel that composes.
  ╚══════════════════════════════════════════════════════════════════════╝
 ```
 
-**Where the core runs.** The same `src/allocate.ts` the proofs are about is
-imported and executed directly by the browser shell — there is no second
-implementation and no adapter layer, so the figures on screen are computed by the
-proven code.
+**Where the core runs.** `src/allocate.guarded.ts` is a generated drop-in: it
+checks the preconditions written on `src/allocate.ts` and delegates accepted
+calls to that exact implementation. There is no second arithmetic
+implementation, so the figures on screen are still computed by the proven code.
 
-**The shell is untrusted and gates every call.** `ui/src/App.tsx`'s `compute()`
-only ever invokes a core function on inputs that satisfy its precondition, and
-*gates* rather than calling out of contract:
+**The shell is untrusted and every call is guarded.** `ui/src/App.tsx`'s
+`compute()` uses `can.*` to preview whether an operation is available, while the
+actual call repeats those checks and throws `PreconditionError` before an
+out-of-contract call can reach the core:
 
 - `bill` runs only once there is at least one priced, claimed item
   (`Σ prices ≥ 1`) — its `requires`; until then the UI shows a prompt.
@@ -193,8 +198,9 @@ The shell can't violate conservation because it can't do the arithmetic — it c
 only call `allocate` / `bill` / `settleRounded`. Live "✓ verified" badges echo
 the proven facts (`Σ shares === tab`, `Σ net === 0`) back to the user.
 
-`src/demo.ts` is a committed runtime check: it runs the verified core on a
-concrete tab and asserts every money invariant at runtime (`npx tsx src/demo.ts`).
+`src/demo.ts` is a committed runtime check: it runs the guarded verified core on
+a concrete tab, asserts every money invariant, and confirms that a hostile call
+is rejected at the boundary (`npm run demo`).
 
 ## 6. Properties — the verified catalog
 
@@ -342,8 +348,10 @@ fail. The redistribution loop that fixes it *is* `allocate`.
 
 - **`//@ backend dafny`, discharged on the real TypeScript.** `lsc` generates
   Dafny from `src/floorShare.ts` and `src/allocate.ts` (manifest:
-  `LemmaScript-files.txt`); the same TypeScript runs in the browser. CI
-  (`.github/workflows/lemmascript.yml`) regenerates and runs `dafny verify`.
+  `LemmaScript-files.txt`). `lemmascript-guard` derives the browser-facing
+  `src/allocate.guarded.ts` from the same source preconditions. CI
+  (`.github/workflows/lemmascript.yml`) verifies the proof, regenerates the
+  guard, and rejects generated drift or unenforceable clauses.
 - **Imperative loops with invariants.** The operations are loop-bodied (`method`
   in Dafny), each carrying a `sumTo` invariant and a `decreases` metric; the
   proof support is hand-written lemmas the loops cite.
@@ -401,8 +409,10 @@ Reproduce:
 npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocate.ts
 # watch the naive version get rejected (red)
 npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocateNaive.ts
-# run the verified core on a concrete tab, asserting invariants at runtime
-npx tsx src/demo.ts
+# regenerate and run the guarded core on a concrete tab
+npm run guard
+npm run typecheck
+npm run demo
 # build the single-file app  →  ui/dist/index.html
 cd ui && npm ci && npm run build
 ```

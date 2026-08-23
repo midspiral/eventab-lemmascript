@@ -1,11 +1,14 @@
 # EvenTab — a verified group bill-splitter
 
+[![LemmaScript verified](https://img.shields.io/github/actions/workflow/status/midspiral/eventab-lemmascript/lemmascript.yml?branch=guard&label=LemmaScript%20verified)](https://github.com/midspiral/eventab-lemmascript/actions/workflows/lemmascript.yml?query=branch%3Aguard)
+
 > **Split the tab, even — provably to the cent.**
 
 A complete, shipped bill-splitter built on a **Dafny-verified money core**
-(`src/allocate.ts`) wrapped in a single-file React app (`ui/`) — full design in
+(`src/allocate.ts`) exposed through generated runtime contracts
+(`src/allocate.guarded.ts`) to a single-file React app (`ui/`) — full design in
 [DESIGN.md](DESIGN.md). The rest of this README walks the verified core stage by
-stage; the app (and how it only ever *calls* the proven ops) is at the end.
+stage; the guarded app boundary is at the end.
 
 ## What's verified
 
@@ -164,9 +167,28 @@ you **wrote**," never "matches the spec you **wanted**." `settle` and `settleRou
 are kept side by side (with the historical note above them in `allocate.ts`) so the
 difference shows up in the *specs*, not just the code.
 
+## Runtime boundary
+
+LemmaScript proves each function under its declared `//@ requires`; ordinary
+TypeScript callers do not automatically satisfy those premises.
+[`lemmascript-guard`](https://github.com/midspiral/lemmascript-guard) generates
+`src/allocate.guarded.ts`, a drop-in module that checks the ordered source
+preconditions, throws `PreconditionError` before an invalid call reaches the
+verified core, and exposes the same checks as `can.*` previews.
+
+The UI and runtime demo import only this generated boundary. CI clones and
+builds the latest LemmaScript and `lemmascript-guard`, regenerates the file, and
+fails on drift or any `UNENFORCED` clause.
+
 ## Run it
 
 ```sh
+# with built sibling LemmaScript and lemmascript-guard checkouts
+npm install
+npm run guard
+npm run typecheck
+npm run demo
+
 # verify the kernel (green)
 npx tsx ../LemmaScript/tools/src/lsc.ts check --backend=dafny src/allocate.ts
 
@@ -190,6 +212,7 @@ src/allocate.ts        VERIFIED core — kernel (allocate, roundness G) + Stage 
                        (itemShare, itemSubtotals, billTotals, bill) + Stage 2
                        (balances, settle, settleRounded, roundToG) + Stage 3 op-log (applyOp, replay).
                        No floats, no I/O.
+src/allocate.guarded.ts GENERATED runtime boundary — checks every `requires`, then delegates.
 src/*.dfy              generated + hand-written lemmas (sumTo, deficit bound, cancellation)
 src/allocateNaive.ts   v0 counterexample (EXPECTED TO FAIL) — the vanished cent
 FALSE_START.md         reject→fix log: encodings that conserved but were still wrong
@@ -197,25 +220,28 @@ FALSE_START.md         reject→fix log: encodings that conserved but were still
 
 ## The app — a single-file verified bill-splitter
 
-`ui/` is a React + Vite app that runs the verified core directly in the browser and
-bundles to ONE self-contained `index.html` (works on GitHub Pages and over `file://`).
-Build it with `cd ui && npm ci && npm run build` → `ui/dist/index.html`.
+`ui/` is a React + Vite app that runs the verified core through its generated
+runtime-contract boundary in the browser and bundles to ONE self-contained
+`index.html` (works on GitHub Pages and over `file://`). Build it with
+`cd ui && npm ci && npm run build` → `ui/dist/index.html`.
 
-The shell is **untrusted**: it only ever calls the proven ops with inputs that satisfy
-their preconditions, and it *gates* on those preconditions rather than calling out of
-contract —
+The shell is **untrusted**: `can.*` previews availability for the interface, but
+every operation independently crosses the generated guard before it can reach
+the verified core —
 
 - `bill` runs only once there is at least one priced, claimed item (`Σ prices ≥ 1`);
 - `balances` / `settleRounded` run only once the tab is fully paid (`Σ paid === grand`), so
   the `Σ net === 0` guarantee is always in-contract — until then the UI shows what is
   still owed instead of a settlement.
 
-Every figure on screen — per-person shares, the tax/tip split, the star settlement —
-comes from `src/allocate.ts`. Shares are computed to the **exact cent**, so an even split
-stays even. The rounding control applies only to the **settlement**: pick $1 or $5 and
-each non-payer's transfer rounds to that unit while the **payer absorbs the difference** —
-`settleRounded` proves it still nets to zero. State persists to `localStorage` and to a
-shareable URL hash; no account, no server.
+Every figure on screen — per-person shares, the tax/tip split, the star
+settlement — comes through `src/allocate.guarded.ts`, which delegates accepted
+calls to the proven implementation in `src/allocate.ts`. Shares are computed to
+the **exact cent**, so an even split stays even. The rounding control applies
+only to the **settlement**: pick $1 or $5 and each non-payer's transfer rounds to
+that unit while the **payer absorbs the difference** — `settleRounded` proves it
+still nets to zero. State persists to `localStorage` and to a shareable URL hash;
+no account, no server.
 
 Browser-tested headless (Playwright + chromium) against the live `dist/index.html`:
 24/24 assertions — values, the conservation/settlement badges, the rounding demo, and

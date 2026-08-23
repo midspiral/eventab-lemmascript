@@ -1,62 +1,60 @@
-name: Dafny
+name: LemmaScript
 
 on:
   push:
-    branches: [main]
+    branches: [main, guard]
   pull_request:
-    branches: [main]
+    branches: [main, guard]
 
 jobs:
-  dafny:
+  verify:
+    uses: midspiral/LemmaScript/.github/workflows/verify.yml@main
+    with:
+      backend: dafny
+      node-version: '24'
+
+  guard-and-runtime:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+      - uses: actions/setup-node@v6
         with:
-          dotnet-version: '8.0.x'
+          node-version: '24'
+      - run: npm ci
 
-      - name: Setup Dafny
-        uses: dafny-lang/setup-dafny-action@v1
-        with:
-          dafny-version: '4.11.0'
+      - name: Clone latest verification toolchains
+        run: |
+          git clone --depth 1 https://github.com/midspiral/LemmaScript.git ../LemmaScript
+          git clone --depth 1 https://github.com/midspiral/lemmascript-guard.git ../lemmascript-guard
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '22'
+      - name: Install and build verification toolchains
+        run: |
+          cd ../LemmaScript
+          npm ci
+          npm run build
+          cd ../lemmascript-guard
+          npm ci
+          npm run build
 
-      - name: Clone LemmaScript
-        run: git clone https://github.com/midspiral/LemmaScript.git ../LemmaScript
+      - name: Regenerate runtime guard
+        env:
+          LEMMASCRIPT: ../LemmaScript
+        run: npm run guard
 
-      - name: Install LemmaScript tools
-        run: cd ../LemmaScript/tools && npm ci
+      - name: Require a complete, current guard
+        run: |
+          git diff --exit-code -- '*.guarded.ts'
+          if grep -R "UNENFORCED" src/*.guarded.ts; then
+            echo "ERROR: incomplete runtime guard"
+            exit 1
+          fi
 
-      - name: Install root dependencies
-        run: npm install
-
-      - name: Typecheck verified module
-        run: npm run typecheck
+      - run: npm run typecheck
+      - run: npm run demo
 
       - name: Install UI dependencies
         run: cd ui && npm ci
-
       - name: Typecheck UI
         run: cd ui && npx tsc --noEmit
-
       - name: Build UI
         run: cd ui && npm run build
-
-      - name: Regenerate and verify (Dafny + guarded)
-        run: ../LemmaScript/tools/check.sh dafny-guarded
-
-      - name: Check generated files are up to date
-        run: |
-          git diff --exit-code -- '*.dfy.gen' '*.dfy' '*.guarded.ts'
-          untracked=$(git ls-files --others --exclude-standard -- '*.dfy.gen' '*.guarded.ts')
-          if [ -n "$untracked" ]; then
-            echo "ERROR: Untracked generated files:"
-            echo "$untracked"
-            exit 1
-          fi

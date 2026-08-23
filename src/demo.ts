@@ -1,7 +1,7 @@
 // Runs the VERIFIED core on a concrete tab — a runtime sanity check, since a
 // proof is about the model, not the running bytes (floats, overflow, JS quirks).
-// `npx tsx src/demo.ts`
-import { itemShare, bill, balances, settle, replay } from "./allocate";
+// `npm run demo`
+import { itemShare, bill, balances, settleRounded, replay, can, PreconditionError } from "./allocate.guarded";
 
 const fmt = (c: number) => `$${(c / 100).toFixed(2)}`;
 const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
@@ -35,7 +35,7 @@ console.log("\nBalances (paid − owed):");
 names.forEach((nm, i) => console.log(`  ${nm}: ${bal[i] >= 0 ? "+" : ""}${fmt(bal[i])}`));
 console.log(`  Σ balances = ${fmt(sum(bal))}  ${sum(bal) === 0 ? "✓" : "✗"}`);
 
-const net = settle(bal); // hub = last person (Cy)
+const net = settleRounded(bal, n - 1, G); // hub = last person (Cy); G=1 → exact, like the app
 console.log("\nSettlement (everyone squares with the hub, Cy):");
 net.forEach((amt, i) => {
   if (i === n - 1 || amt === 0) return;
@@ -46,12 +46,26 @@ net.forEach((amt, i) => {
 const finalBal = replay([0, 1, 2], [2, 0, 1], [500, 500, 500], n);
 console.log("\nOp-log replay (3 edits, any order): Σ =", sum(finalBal), sum(finalBal) === 0 ? "✓" : "✗");
 
+// The proof's preconditions are also the runtime boundary: previewing and
+// executing the same hostile call must both reject it at the first clause.
+const previewRejects = !can.itemShare(-1, [0], [1], 1, 1);
+let rejectedClause = "";
+try {
+  itemShare(-1, [0], [1], 1, 1);
+} catch (error) {
+  if (!(error instanceof PreconditionError)) throw error;
+  rejectedClause = error.clauseId;
+}
+const guardRejects = previewRejects && rejectedClause === "itemShare#0";
+console.log("Runtime guard rejects a negative item price:", guardRejects ? `✓ ${rejectedClause}` : "✗");
+
 // ── Assert every money invariant at runtime ──
 const ok =
   sum(totals) === grand &&
   beer[2] === 0 && // non-claimer pays nothing
   sum(bal) === 0 &&
   net.every((v, i) => v === bal[i]) && // settlement squares everyone
-  sum(finalBal) === 0;
+  sum(finalBal) === 0 &&
+  guardRejects;
 console.log(`\n${ok ? "✓ all money invariants hold at runtime" : "✗ a runtime invariant FAILED"}`);
 if (!ok) throw new Error("a runtime money invariant FAILED");
