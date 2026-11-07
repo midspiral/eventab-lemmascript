@@ -442,8 +442,8 @@ export default function App() {
               <thead>
                 <tr>
                   <th>Person</th>
-                  <th>Owes</th>
-                  <th>Paid</th>
+                  <th className="num">Owes</th>
+                  <th className="num">Paid</th>
                 </tr>
               </thead>
               <tbody>

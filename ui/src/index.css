@@ -289,6 +289,9 @@ select:focus {
   color: var(--muted);
   font-weight: 600;
 }
+.totals th.num {
+  font-family: inherit;
+}
 .num {
   text-align: right !important;
   font-family: var(--mono);
