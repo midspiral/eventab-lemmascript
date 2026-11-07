@@ -11,6 +11,26 @@ function JSFloorDiv(a: int, b: int): int
     else -((a - 1) / (-b)) - 1
 }
 
+function allocateNaive(total: int, weights: seq<int>): seq<int>
+  requires (total >= 0)
+  requires (|weights| >= 1)
+  requires forall k: int :: ((0 <= k) ==> (k < |weights|) ==> (weights[k] >= 0))
+  requires (sum(weights) >= 1)
+{
+  var W := sum(weights);
+  seq(|weights|, i_map requires 0 <= i_map < |weights| => var w := weights[i_map]; JSFloorDiv((total * w), W))
+}
+
+lemma allocateNaive_ensures(total: int, weights: seq<int>)
+  requires (total >= 0)
+  requires (|weights| >= 1)
+  requires forall k: int :: ((0 <= k) ==> (k < |weights|) ==> (weights[k] >= 0))
+  requires (sum(weights) >= 1)
+  ensures (|allocateNaive(total, weights)| == |weights|)
+  ensures (sum(allocateNaive(total, weights)) == total)
+{
+}
+
 function sumTo(arr: seq<int>, n: int): int
   requires (0 <= n)
   requires (n <= |arr|)
@@ -22,27 +42,7 @@ function sumTo(arr: seq<int>, n: int): int
     (sumTo(arr, (n - 1)) + arr[(n - 1)])
 }
 
-method allocateNaive(total: int, weights: seq<int>) returns (res: seq<int>)
-  requires (total >= 0)
-  requires (|weights| >= 1)
-  requires forall k: int :: ((0 <= k) ==> (k < |weights|) ==> (weights[k] >= 0))
-  requires (sumTo(weights, |weights|) >= 1)
-  ensures (|res| == |weights|)
-  ensures (sumTo(res, |res|) == total)
+function sum(arr: seq<int>): int
 {
-  var n := |weights|;
-  var i_t0 := sumTo(weights, n);
-  var W := i_t0;
-  var result: seq<int> := [];
-  var i := 0;
-  while (i < n)
-    invariant (0 <= i)
-    invariant (i <= n)
-    invariant (|result| == i)
-    decreases (n - i)
-  {
-    result := (result + [JSFloorDiv((total * weights[i]), W)]);
-    i := (i + 1);
-  }
-  return result;
+  sumTo(arr, |arr|)
 }

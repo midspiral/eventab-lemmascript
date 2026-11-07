@@ -24,8 +24,20 @@
 // flooring has the same disease: the parts don't sum to the whole.)
 // ════════════════════════════════════════════════════════════════
 
-// Same prefix-sum helper as the verified core (kept local so the
-// rejection is about conservation, not a cross-file opaque symbol).
+//@ requires total >= 0
+//@ requires weights.length >= 1
+//@ requires forall(k, 0 <= k && k < weights.length ==> weights[k] >= 0)
+//@ requires sum(weights) >= 1
+//@ ensures \result.length === weights.length
+// The next line is UNPROVABLE — the floors lose cents, so Σ < total:
+//@ ensures sum(\result) === total
+export function allocateNaive(total: number, weights: number[]): number[] {
+  const W = sum(weights);
+  return weights.map(w =>
+    Math.floor(total * w / W));  // floor each share, ship
+}
+
+// Keep the sum definition local so verification proves its implementation too.
 export function sumTo(arr: number[], n: number): number {
   //@ requires 0 <= n && n <= arr.length
   //@ decreases n
@@ -33,28 +45,6 @@ export function sumTo(arr: number[], n: number): number {
   return sumTo(arr, n - 1) + arr[n - 1];
 }
 
-export function allocateNaive(total: number, weights: number[]): number[] {
-  //@ requires total >= 0
-  //@ requires weights.length >= 1
-  //@ requires forall(k, 0 <= k && k < weights.length ==> weights[k] >= 0)
-  //@ requires sumTo(weights, weights.length) >= 1
-  //@ ensures \result.length === weights.length
-  // The next line is UNPROVABLE — the floors lose cents, so Σ < total:
-  //@ ensures sumTo(\result, \result.length) === total
-  //@ type i nat
-
-  const n = weights.length;
-  const W = sumTo(weights, n);
-
-  // Floor each fair share and ship it. No redistribution — that's the bug.
-  let result: number[] = [];
-  let i = 0;
-  while (i < n) {
-    //@ invariant 0 <= i && i <= n
-    //@ invariant result.length === i
-    //@ decreases n - i
-    result = [...result, Math.floor((total * weights[i]) / W)];
-    i = i + 1;
-  }
-  return result;
+export function sum(arr: number[]): number {
+  return sumTo(arr, arr.length);
 }
