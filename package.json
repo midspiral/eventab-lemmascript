@@ -7,7 +7,7 @@
     "typecheck": "tsc --noEmit",
     "regen": "npx tsx ../LemmaScript/tools/src/lsc.ts regen --backend=dafny",
     "verify": "../LemmaScript/tools/check.sh dafny",
-    "guard": "../lemmascript-guard/check-guarded.sh",
+    "guard": "node ../LemmaScript/tools/dist/lsc.js guard src/allocate.ts",
     "demo": "tsx src/demo.ts"
   },
   "devDependencies": {

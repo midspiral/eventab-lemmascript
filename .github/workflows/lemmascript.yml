@@ -22,29 +22,30 @@ jobs:
           node-version: '24'
       - run: npm ci
 
-      - name: Clone latest verification toolchains
-        run: |
-          git clone --depth 1 https://github.com/midspiral/LemmaScript.git ../LemmaScript
-          git clone --depth 1 https://github.com/midspiral/lemmascript-guard.git ../lemmascript-guard
+      - name: Clone latest LemmaScript
+        run: git clone https://github.com/midspiral/LemmaScript.git ../LemmaScript
 
-      - name: Install and build verification toolchains
+      - name: Build lsc with the published guard
+        working-directory: ../LemmaScript
         run: |
-          cd ../LemmaScript
-          npm ci
-          npm run build
-          cd ../lemmascript-guard
-          npm ci
+          npm ci --include=optional
           npm run build
 
       - name: Regenerate runtime guard
-        env:
-          LEMMASCRIPT: ../LemmaScript
-        run: npm run guard
+        run: |
+          rm src/allocate.guarded.ts
+          npm run guard
 
       - name: Require a complete, current guard
         run: |
           git diff --exit-code -- '*.guarded.ts'
-          if grep -R "UNENFORCED" src/*.guarded.ts; then
+          untracked=$(git ls-files --others --exclude-standard -- '*.guarded.ts')
+          if [ -n "$untracked" ]; then
+            echo "ERROR: Untracked generated guards:"
+            echo "$untracked"
+            exit 1
+          fi
+          if grep -n "UNENFORCED" src/*.guarded.ts; then
             echo "ERROR: incomplete runtime guard"
             exit 1
           fi
@@ -54,7 +55,5 @@ jobs:
 
       - name: Install UI dependencies
         run: cd ui && npm ci
-      - name: Typecheck UI
-        run: cd ui && npx tsc --noEmit
-      - name: Build UI
+      - name: Typecheck and build UI
         run: cd ui && npm run build

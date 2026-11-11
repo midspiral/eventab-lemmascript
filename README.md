@@ -176,15 +176,18 @@ TypeScript callers do not automatically satisfy those premises.
 preconditions, throws `PreconditionError` before an invalid call reaches the
 verified core, and exposes the same checks as `can.*` previews.
 
-The UI and runtime demo import only this generated boundary. CI clones and
-builds the latest LemmaScript and `lemmascript-guard`, regenerates the file, and
-fails on drift or any `UNENFORCED` clause.
+The UI and runtime demo import only this generated boundary. CI builds
+LemmaScript from source with its published npm `lemmascript-guard` dependency,
+regenerates the file through `lsc guard`, and fails on drift or any `UNENFORCED`
+clause. It also runs the runtime demo and typechecks and builds the UI.
 
 ## Run it
 
 ```sh
-# with built sibling LemmaScript and lemmascript-guard checkouts
-npm install
+# Node.js 22+ and a sibling LemmaScript checkout
+npm --prefix ../LemmaScript ci --include=optional
+npm --prefix ../LemmaScript run build
+npm ci
 npm run guard
 npm run typecheck
 npm run demo
